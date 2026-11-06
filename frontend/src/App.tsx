@@ -4,6 +4,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from
 import { Sidebar } from "./components/Shell";
 import { HomePage, OutboxPage, SettingsPage, WorkspacePage } from "./pages";
 import { SetupPage } from "./SetupPage";
+import { WhatIfPage } from "./WhatIfPage";
 import { RippleProvider, useRipple } from "./store";
 
 function Layout() {
@@ -46,6 +47,7 @@ function Layout() {
             <Route path="/" element={<HomePage />} />
             <Route path="/setup" element={<SetupPage />} />
             <Route path="/event" element={<WorkspacePage />} />
+            <Route path="/whatif" element={<WhatIfPage />} />
             <Route path="/outbox" element={<OutboxPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />

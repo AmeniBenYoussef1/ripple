@@ -57,6 +57,23 @@ export function friendlyError(status: number, detail: string): string {
 
 const ev = `/api/events/${EVENT_ID}`;
 
+export interface WhatIfRipple {
+  groups: { id: string; label: string; size?: number | null }[];
+  parts: { id: string; label: string; effect: string }[];
+  run: string[];
+  skipped: Record<string, string>;
+  cached: string[];
+}
+export interface WhatIfRow { rank: number | null; verdict: string; violations: string[] }
+export interface WhatIf {
+  label: string;
+  budget: { now: number | null; whatif: number | null };
+  attendees: { now: number | null; whatif: number | null; ripple: WhatIfRipple | null };
+  delay: { node: string; label: string; minutes: number; ripple: WhatIfRipple } | null;
+  options: { problem: string; text: string; rows: { id: string; title: string; now: WhatIfRow; whatif: WhatIfRow }[] } | null;
+  apply: { kind: "budget" | "problem"; text: string; value?: number; replayable: boolean }[];
+}
+
 export const api = {
   async load(): Promise<EventState> {
     try {
@@ -100,6 +117,10 @@ export const api = {
     call<{ scored: { feasible: boolean }[] }>(`${ev}/problems/${encodeURIComponent(did)}/replan`, { method: "POST", body: JSON.stringify({ note }) }),
   editMessage: (id: string, subject: string, body: string) =>
     call<Message>(`${ev}/outbox/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify({ subject, body }) }),
+  whatif: (body: { budget_eur?: number; attendees?: number; delay_node?: string; delay_minutes?: number }) =>
+    call<WhatIf>(`${ev}/whatif`, { method: "POST", body: JSON.stringify(body) }),
+  setBudget: (remaining_eur: number) =>
+    call<EventState>(`${ev}/budget`, { method: "POST", body: JSON.stringify({ remaining_eur }) }),
   confirmSetup: () => call<EventState>(`${ev}/setup/confirm`, { method: "POST" }),
   demoFiles: () => call<{ name: string; bytes: number }[]>("/api/demo-files"),
   demoFileUrl: (name: string) => `${API}/api/demo-files/${encodeURIComponent(name)}`,

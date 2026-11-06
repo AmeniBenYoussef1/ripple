@@ -948,6 +948,25 @@ def edit_message(event: Event, message_id: str, subject: str, body: str) -> dict
     raise OrchestratorError(f"unknown message ids: ['{message_id}']")
 
 
+def set_budget(event: Event, remaining_eur: float) -> None:
+    """A budget change for the whole event (from the What-if): re-score every problem still open."""
+    model = event.model
+    node = next((n for n in model.nodes if n.type == NodeType.constraint and "remaining_eur" in n.attrs), None)
+    if node is None:
+        raise OrchestratorError("this event has no budget to change")
+    old = node.attrs["remaining_eur"]
+    node.attrs["remaining_eur"] = remaining_eur
+    event.set_model(model)
+    was = f"EUR {old:g}" if isinstance(old, (int, float)) else "unknown"
+    log(event, "constraint", f"Budget left changed from {was} to EUR {remaining_eur:g} (from the What-if)")
+    for h in event.data["history"]:
+        if h.get("scenarios") and h.get("coordinator") == "waiting_for_choice":
+            slack = h.get("relaxed", {}).get("capacity_slack", 0)
+            h["scored"] = [x.to_dict() for x in score([Scenario.model_validate(s) for s in h["scenarios"]],
+                                                       remaining_eur, slack)]
+    event.save()
+
+
 def approve_messages(event: Event, ids: list[str]) -> list[dict[str, Any]]:
     """Mark outbox drafts as approved. Nothing is sent: export or copy happens in the UI."""
     wanted = set(ids)

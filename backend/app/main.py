@@ -26,7 +26,8 @@ from pydantic import BaseModel, Field
 
 from .agents import AgentOutputError
 from .geo import Geocoder, venue_pins
-from .orchestrator import (edit_message, replan_with, record_decision, relax_limits, set_action, answer_question, recorded_answers, recorded_options, DATA, EVENTS, FIXTURES, GENERATED_MODEL, SETUP_MAX_BYTES, Event, OrchestratorError,
+from .whatif import simulate
+from .orchestrator import (set_budget, slugify, edit_message, replan_with, record_decision, relax_limits, set_action, answer_question, recorded_answers, recorded_options, DATA, EVENTS, FIXTURES, GENERATED_MODEL, SETUP_MAX_BYTES, Event, OrchestratorError,
                            Runner, analyze_event, approve_messages, choose_scenario, confirm_setup, demo_mode,
                            handle_disruption, load_event, new_event, total_cost)
 
@@ -87,6 +88,18 @@ class ReplanBody(BaseModel):
 class EditBody(BaseModel):
     subject: str = Field(min_length=1, max_length=300)
     body: str = Field(min_length=1, max_length=10000)
+
+
+class WhatIfBody(BaseModel):
+    budget_eur: Optional[float] = None
+    attendees: Optional[int] = None
+    delay_node: Optional[str] = None
+    delay_minutes: int = 0
+    problem: Optional[str] = None
+
+
+class BudgetBody(BaseModel):
+    remaining_eur: float = Field(ge=0)
 
 
 class ApproveBody(BaseModel):
@@ -278,6 +291,25 @@ def create_app(events_dir: Path = EVENTS, fixtures_dir: Path = FIXTURES, model_p
     async def edit(event_id: str, message_id: str, body: EditBody) -> dict[str, Any]:
         event = get_event(event_id)
         return plain(event_id, lambda: edit_message(event, message_id, body.subject, body.body))
+
+    @app.post("/api/events/{event_id}/whatif")
+    async def whatif(event_id: str, body: WhatIfBody) -> dict[str, Any]:
+        """Dry run in code: no agent runs, nothing is saved."""
+        event = get_event(event_id)
+        try:
+            out = simulate(event.data, body.budget_eur, body.attendees, body.delay_node, body.delay_minutes, body.problem)
+        except ValueError as err:
+            raise HTTPException(400, str(err)) from err
+        for a in out["apply"]:   # Replay can only apply a problem that was recorded
+            a["replayable"] = a["kind"] != "problem" or not demo or (fixtures_dir / slugify(a["text"])).is_dir()
+        return out
+
+    @app.post("/api/events/{event_id}/budget")
+    async def budget(event_id: str, body: BudgetBody) -> dict[str, Any]:
+        """Apply a budget change for real (code only), re-scoring open problems."""
+        event = get_event(event_id)
+        plain(event_id, lambda: set_budget(event, body.remaining_eur))
+        return state(event)
 
     @app.post("/api/events/{event_id}/outbox/approve")
     async def approve(event_id: str, body: ApproveBody) -> dict[str, Any]:
