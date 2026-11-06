@@ -35,6 +35,16 @@ DEFAULT_AREA = os.environ.get("RIPPLE_SEARCH_AREA", "Paris, France")
 FILE_TYPES = {".ics": "text/calendar", ".csv": "text/csv"}
 
 
+def replay_delay_from_env() -> tuple[float, float]:
+    """DEMO_REPLAY_DELAY="0.3-0.8" (default) or "0" to replay instantly."""
+    raw = os.environ.get("DEMO_REPLAY_DELAY", "0.3-0.8").strip()
+    lo, _, hi = raw.partition("-")
+    try:
+        return (float(lo), float(hi or lo))
+    except ValueError:
+        return (0.3, 0.8)
+
+
 # ---- Request bodies -------------------------------------------------------------
 
 
@@ -87,8 +97,9 @@ def sse(msg: dict[str, Any]) -> str:
 
 
 def create_app(events_dir: Path = EVENTS, fixtures_dir: Path = FIXTURES, model_path: Path = GENERATED_MODEL,
-               demo: Optional[bool] = None) -> FastAPI:
+               demo: Optional[bool] = None, replay_delay: Optional[tuple[float, float]] = None) -> FastAPI:
     demo = demo_mode() if demo is None else demo
+    replay_delay = replay_delay_from_env() if replay_delay is None else replay_delay
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -118,6 +129,7 @@ def create_app(events_dir: Path = EVENTS, fixtures_dir: Path = FIXTURES, model_p
 
     def runner_for(event_id: str) -> Runner:
         return Runner(client=app.state.client, demo=demo, fixtures_dir=fixtures_dir,
+                      replay_delay=replay_delay if demo else (0.0, 0.0),
                       on_event=lambda e: broker.publish(event_id, "agent", e),
                       on_stage=lambda name, payload: broker.publish(event_id, name, payload))
 

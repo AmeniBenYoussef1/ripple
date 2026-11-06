@@ -12,7 +12,8 @@ T1, T2, T3 = "The hall just cancelled.", "Speaker 2's train is 2 hours late.", "
 
 @pytest.fixture
 def client(tmp_path):
-    app = create_app(events_dir=tmp_path / "events", fixtures_dir=FIXTURES, model_path=GENERATED_MODEL, demo=True)
+    app = create_app(events_dir=tmp_path / "events", fixtures_dir=FIXTURES, model_path=GENERATED_MODEL, demo=True,
+                     replay_delay=(0, 0))
     with TestClient(app) as c:
         assert c.post("/api/events/demo/setup", json={"search_area": "Paris, France"}).status_code == 200
         yield c
@@ -91,8 +92,10 @@ def test_stream_replays_the_progress_log(client):
     assert impact["waves"] == [["grp_workshop_participants", "grp_speaker_2"]]
     routing = dict(events)["routing"]
     assert routing["run"] == ["replanner", "coordinator"] and "resource_finder" in routing["skipped"]
-    agent = next(d for k, d in events if k == "agent")
-    assert agent["description"].startswith("replayed recording")
+    agent_events = [d for k, d in events if k == "agent"]
+    assert all(d["replay"] for d in agent_events)
+    assert any(d["event"] == "ToolCall" and d["description"] for d in agent_events)   # the recorded live steps
+    assert {d["agent"] for d in agent_events} == {"impact", "replanner"}
 
 
 def test_reset_clears_history_and_stream(client):

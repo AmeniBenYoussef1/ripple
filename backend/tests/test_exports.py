@@ -77,3 +77,15 @@ def test_csv_workshop_only():
 def test_csv_empty_when_no_participant_group_is_messaged():
     text, n = build_attendee_csv(DATA / "participants.csv", MODEL, [{"group": "grp_caterer", "subject": "x"}])
     assert n == 0 and rows(text) == []
+
+
+def test_csv_newcomers_only(tmp_path):
+    late = tmp_path / "late.csv"
+    late.write_text("name,email,team,dietary,workshop\nNew One,new.one@example.com,team_51,none,no\n"
+                    "New Two,new.two@example.com,team_51,none,no\n", encoding="utf-8")
+    text, n = build_attendee_csv(DATA / "participants.csv", MODEL,
+                                 [{"group": "grp_newcomers", "subject": "Welcome"},
+                                  {"group": "grp_caterer", "subject": "230 boxes"}], newcomers_csv=late)
+    assert n == 2
+    assert [r["email"] for r in rows(text)] == ["new.one@example.com", "new.two@example.com"]
+    assert rows(text)[0]["groups"] == "Newcomers"

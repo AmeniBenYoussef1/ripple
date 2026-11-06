@@ -32,6 +32,8 @@ OUTBOX = {"messages": [
 ], "revised_schedule": [{"id": "lunch", "start": "12:30", "end": "13:30", "place": "Hall C"}]}
 OUTBOX_3 = {"messages": [
     {"group": "grp_caterer", "to": "orders@greenfork.example.com", "subject": "230 lunch boxes", "body": "..."},
+    {"group": "grp_newcomers", "to": "30 newcomers", "subject": "Welcome to CodeSprint", "body": "..."},
+    {"group": "grp_attendees", "to": "200 attendees", "subject": "More people", "body": "should be dropped"},
 ]}
 
 FIXTURES = {
@@ -121,7 +123,8 @@ def test_full_demo_sequence_skips_the_right_agents(setup):
     assert two["routing"]["run"] == ["replanner", "coordinator"]
     assert "resource_finder" in two["routing"]["skipped"]
     assert two["impact"]["waves"] == [["grp_workshop", "grp_speaker_2"]]
-    assert two["saved"]["resource_finder"] == "0.04"     # its average real cost so far
+    assert two["saved"]["resource_finder"] == {"cost": "0.04", "estimate": False,
+                                               "basis": "average on this event"}
 
     three = run(handle_disruption(event, T3, runner))    # new hall holds 250 >= 230
     assert three["routing"]["run"] == ["coordinator"]
@@ -129,8 +132,8 @@ def test_full_demo_sequence_skips_the_right_agents(setup):
     assert three["impact"]["checked_ok"] == ["venue_main_hall"]
     assert Decimal(three["saved_total"]) == Decimal("0.04") + Decimal("0.02")
     assert three["coordinator"] == "done"                    # nothing to choose: informed at once
-    assert [m["group"] for m in three["outbox"]] == ["grp_caterer"]
-    assert three["files"] == []                              # no participant group, nothing moves
+    assert [m["group"] for m in three["outbox"]] == ["grp_caterer", "grp_newcomers"]   # not existing attendees
+    assert three["files"] == [{"name": "d3-attendee_update.csv", "kind": "csv", "rows": 30}]
     assert event.model.node("grp_attendees").attrs["size"] == 230
 
 
@@ -230,3 +233,34 @@ def test_stage_events_follow_the_flow(setup):
     run(handle_disruption(event, T3, runner))
     assert stages[:4] == ["started", "cost", "impact", "routing"]
     assert "outbox" in stages and stages[-1] == "done"
+
+
+def test_saved_estimate_falls_back_to_recordings(setup):
+    event, runner, _, _ = setup
+    two = run(handle_disruption(event, T2, runner))          # Finder never ran on this event
+    assert two["saved"]["resource_finder"] == {"cost": "0.04", "estimate": True,
+                                               "basis": "average of recorded runs"}
+    assert two["saved_is_estimate"] is True
+
+
+def test_replay_paces_recorded_steps(setup, monkeypatch):
+    event, runner, events, tmp = setup
+    rec_path = tmp / "fixtures" / slugify(T2) / "impact_analyst.json"
+    data = json.loads(rec_path.read_text())
+    data["events"] = [{"event": "ToolCall", "status": "running", "description": "read_file: Read schedule"},
+                      {"event": "ToolCall", "status": "success", "description": "read_file: Read schedule"},
+                      {"event": "Result", "status": "success", "description": ""}]
+    rec_path.write_text(json.dumps(data))
+    sleeps = []
+
+    async def fake_sleep(seconds):
+        sleeps.append(seconds)
+
+    monkeypatch.setattr("app.orchestrator.asyncio.sleep", fake_sleep)
+    runner.replay_delay = (0.3, 0.8)
+    run(handle_disruption(event, T2, runner))
+    impact_events = [e for e in events if e["agent"] == "impact"]
+    assert [e["description"] for e in impact_events[:2]] == ["read_file: Read schedule"] * 2
+    assert all(e["replay"] for e in impact_events)
+    assert impact_events[-1]["event"] == "Replay"
+    assert len(sleeps) >= 1 and all(0.3 <= x <= 0.8 for x in sleeps[:1])   # one pause per running step

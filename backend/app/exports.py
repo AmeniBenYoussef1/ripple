@@ -82,6 +82,8 @@ def build_ics(items: list[dict[str, Any]], model: EventModel, date: str,
     return "\r\n".join(_fold(line) for line in lines) + "\r\n"
 
 
+NEWCOMERS_GROUP = "grp_newcomers"   # people in late_registrations.csv (not a node of the model)
+
 # ---- attendee_update.csv --------------------------------------------------------------
 
 
@@ -92,34 +94,43 @@ def participant_filter(group_label: str, group_id: str):
     return lambda row: True
 
 
-def build_attendee_csv(participants_csv: Path, model: EventModel,
-                       messages: list[dict[str, Any]]) -> tuple[str, int]:
+def _read_rows(path: Path) -> list[dict[str, str]]:
+    with open(path, newline="", encoding="utf-8") as f:
+        return list(csv.DictReader(f))
+
+
+def build_attendee_csv(participants_csv: Path, model: EventModel, messages: list[dict[str, Any]],
+                       newcomers_csv: Optional[Path] = None) -> tuple[str, int]:
     """One row per participant who gets at least one message, with every update for them.
 
-    Only groups built from participants.csv count; speakers, volunteers and the caterer get
-    their own direct messages. Returns (csv text, number of people).
+    Only groups built from participants.csv count (plus the newcomers of a late registration,
+    from `newcomers_csv`); speakers, volunteers and the caterer get their own direct messages.
+    Returns (csv text, number of people).
     """
     groups = {n.id: n for n in model.nodes if n.type == NodeType.group and n.source == "participants.csv"}
-    with open(participants_csv, newline="", encoding="utf-8") as f:
-        rows = list(csv.DictReader(f))
+    rows = _read_rows(participants_csv)
+    newcomers = _read_rows(newcomers_csv) if newcomers_csv and newcomers_csv.exists() else []
 
     updates: dict[str, dict[str, Any]] = {}   # email -> row being built (keeps file order below)
     for m in messages:
-        g = groups.get(m.get("group"))
-        if g is None:
+        if m.get("group") == NEWCOMERS_GROUP:
+            label, members = "Newcomers", newcomers
+        elif m.get("group") in groups:
+            g = groups[m["group"]]
+            keep = participant_filter(g.label, g.id)
+            label, members = g.label, [r for r in rows if keep(r)]
+        else:
             continue
-        keep = participant_filter(g.label, g.id)
-        for r in rows:
-            if keep(r):
-                u = updates.setdefault(r["email"], {"name": r["name"], "email": r["email"],
-                                                    "team": r.get("team", ""), "groups": [], "what_changed": []})
-                u["groups"].append(g.label)
-                u["what_changed"].append(m.get("subject") or "Update")
+        for r in members:
+            u = updates.setdefault(r["email"], {"name": r["name"], "email": r["email"],
+                                                "team": r.get("team", ""), "groups": [], "what_changed": []})
+            u["groups"].append(label)
+            u["what_changed"].append(m.get("subject") or "Update")
 
     out = io.StringIO()
     w = csv.writer(out, lineterminator="\n")
     w.writerow(["name", "email", "team", "groups", "what_changed"])
-    order = [r["email"] for r in rows if r["email"] in updates]
+    order = [r["email"] for r in rows + newcomers if r["email"] in updates]
     for email in order:
         u = updates[email]
         w.writerow([u["name"], u["email"], u["team"], "; ".join(u["groups"]), " | ".join(u["what_changed"])])

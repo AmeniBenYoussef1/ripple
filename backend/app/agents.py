@@ -111,6 +111,7 @@ class AgentResult:
     thread_id: Optional[str] = None
     files: list[Any] = field(default_factory=list)   # ConversationFile objects from the reply
     raw: str = ""                               # last reply text, for debugging
+    events: list[dict[str, Any]] = field(default_factory=list)  # streamed steps, kept for DEMO_MODE replay
 
 
 AGENT_ENV = {
@@ -141,14 +142,18 @@ def describe_event(ev: Any) -> dict[str, Any]:
             "description": description, "id": getattr(ev, "correlation_id", None)}
 
 
-async def _consume(run: Any, agent: str, on_event: Optional[EventCallback]) -> tuple[Any, Decimal]:
-    """Stream the run's events to the callback; return (final message, cost)."""
+async def _consume(run: Any, agent: str, on_event: Optional[EventCallback],
+                   log: Optional[list] = None) -> tuple[Any, Decimal]:
+    """Stream the run's events to the callback (and `log`); return (final message, cost)."""
     cost = Decimal(0)
     async for ev in run:
         if type(ev).__name__ == "Result":
             cost += ev.data.cost.total
+        item = {"agent": agent, **describe_event(ev)}
+        if log is not None:
+            log.append(item)
         if on_event is not None:
-            out = on_event({"agent": agent, **describe_event(ev)})
+            out = on_event(item)
             if hasattr(out, "__await__"):
                 await out
     return await run.result(), cost
@@ -180,9 +185,10 @@ async def call_agent(
     else:
         run = await client.chat.send(thread_id, agent_id=aid, message=message,
                                      file_ids=file_ids, max_steps=max_steps)
-    reply, cost = await _consume(run, agent, on_event)
+    log: list[dict[str, Any]] = []
+    reply, cost = await _consume(run, agent, on_event, log)
     result = AgentResult(agent=agent, cost=cost, thread_id=thread_id,
-                         files=list(reply.files), raw=reply.content)
+                         files=list(reply.files), raw=reply.content, events=log)
 
     # Built-in clarifying questions (reply.questions) win over everything else.
     if reply.questions:
@@ -204,7 +210,7 @@ async def call_agent(
             f"with the top-level key(s) {list(shape.model_fields)}. Error:\n{short_error(err)}"
         )
         run = await client.chat.send(thread_id, agent_id=aid, message=retry_msg, max_steps=max_steps)
-        reply, more = await _consume(run, agent, on_event)
+        reply, more = await _consume(run, agent, on_event, log)
         result.cost += more
         result.raw = reply.content
         result.files = list(reply.files) or result.files

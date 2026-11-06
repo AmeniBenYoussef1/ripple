@@ -18,8 +18,10 @@ With DEMO_MODE=true those recordings are replayed instead of calling Cominty.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+import random
 import re
 import shutil
 from dataclasses import dataclass, field
@@ -32,7 +34,7 @@ from pydantic import BaseModel
 
 from .agents import (AgentResult, CandidatesReply, CoordinatorReply, DisruptionReply,
                      EventCallback, Question, ScenariosReply, call_agent)
-from .exports import build_attendee_csv, build_ics
+from .exports import NEWCOMERS_GROUP, build_attendee_csv, build_ics
 from .impact_engine import propagate, route
 from .models import EventModel, NodeType, Scenario
 from .scoring import score
@@ -42,6 +44,7 @@ FIXTURES = BACKEND / "fixtures"
 EVENTS = BACKEND / "events"
 DATA = BACKEND / "demo_data"
 GENERATED_MODEL = DATA / "event_model_generated.json"
+LATE_REGISTRATIONS = DATA / "late_registrations.csv"   # the newcomers of a "resized" disruption
 
 # engine agent name -> (agents.py key, reply shape, max tool rounds)
 SPEC: dict[str, tuple[str, type[BaseModel], int]] = {
@@ -134,6 +137,8 @@ class Runner:
     on_event: Optional[EventCallback] = None   # agent progress (ToolCall, LlmStep, ...)
     on_stage: Optional[StageCallback] = None   # flow progress (impact, routing, scenarios, outbox)
     prefer_recordings: bool = False            # live mode: replay what is recorded, call only what is missing
+    replay_delay: tuple[float, float] = (0.0, 0.0)  # DEMO_MODE pacing between replayed steps, in seconds
+    replay_max_per_agent: float = 6.0          # cap so a long recording still replays quickly
 
     def _fixture(self, slug: str, agent: str) -> Path:
         return self.fixtures_dir / slug / f"{agent}.json"
@@ -166,19 +171,31 @@ class Runner:
                           questions=[Question.model_validate(q) for q in rec.get("questions", [])])
         if rec.get("data") is not None:
             res.data = shape.model_validate(rec["data"])
+        # Replay the recorded steps (same descriptions as live), paced so the UI can animate them.
+        steps = [e for e in rec.get("events", []) if e.get("event") != "Result"]
+        running = sum(1 for e in steps if e.get("status") == "running") or 1
+        lo, hi = self.replay_delay
+        cap = self.replay_max_per_agent / running
+        for e in steps:
+            if e.get("status") == "running" and hi > 0:
+                await asyncio.sleep(min(random.uniform(lo, hi), cap))
+            await self._emit({**e, "agent": key, "replay": True})
+        await self._emit({"agent": key, "event": "Replay", "status": "success", "replay": True,
+                          "description": f"replayed recording {path.parent.name}/{path.name}", "id": None})
+        return res
+
+    async def _emit(self, item: dict[str, Any]) -> None:
         if self.on_event is not None:
-            out = self.on_event({"agent": key, "event": "Replay", "status": "success",
-                                 "description": f"replayed recording {path.parent.name}/{path.name}", "id": None})
+            out = self.on_event(item)
             if hasattr(out, "__await__"):
                 await out
-        return res
 
     def _record(self, path: Path, agent: str, message: str, res: AgentResult) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         rec = {"agent": agent, "recorded_at": now_iso(), "thread_id": res.thread_id, "cost": str(res.cost),
                "message": message, "raw": res.raw,
                "data": res.data.model_dump(mode="json", by_alias=True) if res.data else None,
-               "questions": [q.model_dump() for q in res.questions],
+               "questions": [q.model_dump() for q in res.questions], "events": res.events,
                "agent_files": [{"name": f.name, "has_url": bool(getattr(f, "url", ""))} for f in res.files]}
         path.write_text(json.dumps(rec, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
@@ -250,6 +267,28 @@ def node_checker(model: EventModel):
 def avg_cost(event: Event, agent: str) -> Optional[Decimal]:
     vals = [Decimal(c["cost"]) for c in event.data["costs"] if c["agent"] == agent]
     return sum(vals) / len(vals) if vals else None
+
+
+def avg_recorded_cost(fixtures_dir: Path, agent: str) -> Optional[Decimal]:
+    """Average real cost of this agent over the recorded runs in fixtures/."""
+    vals = []
+    for f in fixtures_dir.glob(f"*/{agent}.json"):
+        try:
+            vals.append(Decimal(json.loads(f.read_text(encoding="utf-8"))["cost"]))
+        except (KeyError, ValueError, OSError):
+            continue
+    return sum(vals) / len(vals) if vals else None
+
+
+def saved_estimate(event: Event, agent: str, fixtures_dir: Path) -> dict[str, Any]:
+    """What a skipped or cached agent would have cost: its average on this event, else in the recordings."""
+    here = avg_cost(event, agent)
+    if here is not None:
+        return {"cost": str(here), "estimate": False, "basis": "average on this event"}
+    rec = avg_recorded_cost(fixtures_dir, agent)
+    if rec is not None:
+        return {"cost": str(rec), "estimate": True, "basis": "average of recorded runs"}
+    return {"cost": None, "estimate": True, "basis": "no data yet"}
 
 
 def add_cost(event: Event, disruption_id: str, agent: str, cost: Decimal) -> None:
@@ -334,14 +373,31 @@ def replanner_message(model: EventModel, slice_ids: list[str], effects: dict, di
     )
 
 
+def newcomers_count(disruption: dict) -> int:
+    """People in late_registrations.csv when a group grew, else 0."""
+    if disruption["kind"] != "resized" or not LATE_REGISTRATIONS.exists():
+        return 0
+    with open(LATE_REGISTRATIONS, encoding="utf-8") as f:
+        return max(sum(1 for _ in f) - 1, 0)
+
+
 def coordinator_message(model: EventModel, slice_ids: list[str], effects: dict, disruption: dict,
                         scenario: Optional[dict]) -> str:
     nodes = {n.id: n for n in model.nodes}
+    origin = disruption["node"]
+    grew = disruption["kind"] == "resized"
     payload = {
         "disruption": disruption,
         "chosen_scenario": scenario,
-        "affected": [{**nodes[i].model_dump(mode="json"), "effect": effects.get(i, "context")} for i in slice_ids],
+        "affected": [{**nodes[i].model_dump(mode="json"), "effect": effects.get(i, "context")}
+                     for i in slice_ids if not (grew and i == origin)],
     }
+    rules = ""
+    if newcomers_count(disruption):
+        payload["newcomers"] = {"group": NEWCOMERS_GROUP, "count": newcomers_count(disruption),
+                                "joining": nodes[origin].label}
+        rules = (f"- The group {origin} grew. Do NOT message its existing members. Write one welcome message to "
+                 f'the newcomers (group "{NEWCOMERS_GROUP}") and one to each supplier whose quantity changes.\n')
     return (
         'Prepare the update. Reply with {"messages": [...], "revised_schedule": [...], "volunteer_tasks": [...]} '
         "as in the ripple-contracts skill. Do NOT create files: Ripple builds the .ics and .csv itself.\n"
@@ -349,6 +405,7 @@ def coordinator_message(model: EventModel, slice_ids: list[str], effects: dict, 
         'Say only what changed for that group. status "draft".\n'
         '- "to": the address of a single person (see the attached people.csv), otherwise a short description '
         'like "40 workshop participants".\n'
+        f"{rules}"
         '- "revised_schedule": every schedule item or commitment whose time or place changes: '
         '{"id": node id, "start": "HH:MM", "end": "HH:MM", "place": "..."}. Empty list if nothing moves.\n'
         f"{dumps(payload)}"
@@ -432,7 +489,7 @@ async def handle_disruption(event: Event, text: str, runner: Runner, area: Optio
         event.set_model(model)
 
     not_run = list(decision.skipped) + list(decision.cached)
-    saved = {a: (str(avg_cost(event, a)) if avg_cost(event, a) is not None else None) for a in not_run}
+    saved = {a: saved_estimate(event, a, runner.fixtures_dir) for a in not_run}
     replanner_used = "replanner" in decision.run or "replanner" in decision.cached
     if "coordinator" in decision.run:
         coordinator = "waiting_for_choice" if replanner_used else "running"
@@ -443,7 +500,8 @@ async def handle_disruption(event: Event, text: str, runner: Runner, area: Optio
         status="ready", disruption=dis, impact=impact.to_dict(), routing=decision.to_dict(),
         candidates=candidates, scenarios=[s.model_dump(mode="json") for s in scenarios],
         scored=[x.to_dict() for x in scored], coordinator=coordinator, costs=costs,
-        saved=saved, saved_total=str(sum((Decimal(v) for v in saved.values() if v), Decimal(0))),
+        saved=saved, saved_total=str(sum((Decimal(v["cost"]) for v in saved.values() if v["cost"]), Decimal(0))),
+        saved_is_estimate=any(v["estimate"] for v in saved.values()),
         outbox=[], files=[],
     )
     event.data["history"].append(entry)
@@ -503,7 +561,10 @@ async def _coordinate(event: Event, entry: dict, scenario: Optional[dict], runne
         event.set_model(model)
 
     out = res.data.model_dump(mode="json") if res.data else {"messages": [], "revised_schedule": [], "volunteer_tasks": []}
-    messages = [{**m, "id": f"{entry['id']}-m{i}", "status": "draft"} for i, m in enumerate(out["messages"], 1)]
+    drafts = out["messages"]
+    if entry["disruption"]["kind"] == "resized":   # a grown group: existing members are not messaged (code rule)
+        drafts = [m for m in drafts if m["group"] != entry["disruption"]["node"]]
+    messages = [{**m, "id": f"{entry['id']}-m{i}", "status": "draft"} for i, m in enumerate(drafts, 1)]
     files = build_files(event, entry["id"], model, out["revised_schedule"], messages)
     if "coordinator" in routing.get("hashes", {}) and res.data is not None:
         event.data["cache"]["coordinator"] = {"hash": routing["hashes"]["coordinator"], "output": out}
@@ -528,7 +589,7 @@ def build_files(event: Event, disruption_id: str, model: EventModel,
         name = f"{prefix}-revised_schedule.ics"
         (event.files_dir / name).write_text(build_ics(revised_schedule, model, date), encoding="utf-8", newline="")
         files.append({"name": name, "kind": "ics", "items": len(revised_schedule)})
-    text, people = build_attendee_csv(DATA / "participants.csv", model, messages)
+    text, people = build_attendee_csv(DATA / "participants.csv", model, messages, newcomers_csv=LATE_REGISTRATIONS)
     if people:
         name = f"{prefix}-attendee_update.csv"
         (event.files_dir / name).write_text(text, encoding="utf-8", newline="")

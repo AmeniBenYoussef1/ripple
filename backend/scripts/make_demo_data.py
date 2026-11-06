@@ -1,7 +1,8 @@
 """Generate Ripple's fictional demo files (deterministic: same output every run).
 
 Run:  cd backend && .venv/Scripts/python scripts/make_demo_data.py
-Writes participants.csv, people.csv, schedule.json, budget.json into demo_data/.
+Writes participants.csv, people.csv, schedule.json, budget.json and
+late_registrations.csv (the 30 newcomers of demo disruption 3) into demo_data/.
 catering_contract.txt is hand-written and left untouched.
 All people are fictional and use @example.com emails.
 """
@@ -20,6 +21,7 @@ LAST = ["Arden", "Brook", "Calder", "Dune", "Ember", "Fallow", "Glen", "Harbor",
 
 N_ATTENDEES = 200
 N_WORKSHOP = 40
+N_LATE = 30
 TEAM_SIZE = 4
 # must match catering_contract.txt (200 boxes: 20 vegetarian, 8 vegan, 4 gluten-free)
 DIETARY = ["vegetarian"] * 20 + ["vegan"] * 8 + ["gluten-free"] * 4
@@ -45,6 +47,16 @@ def write_participants(rng: random.Random, names: list[str]) -> None:
         for i, name in enumerate(names):
             team = f"team_{i // TEAM_SIZE + 1:02d}"
             w.writerow([name, email(name), team, dietary[i], "yes" if i in workshop else "no"])
+
+
+def write_late_registrations(names: list[str]) -> None:
+    """30 people who registered after the deadline: new teams, no workshop."""
+    with open(OUT / "late_registrations.csv", "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["name", "email", "team", "dietary", "workshop"])
+        for i, name in enumerate(names):
+            team = f"team_{N_ATTENDEES // TEAM_SIZE + i // TEAM_SIZE + 1:02d}"
+            w.writerow([name, email(name), team, "none", "no"])
 
 
 def write_people(names: list[str]) -> None:
@@ -114,9 +126,10 @@ def write_budget() -> None:
 
 def main() -> None:
     rng = random.Random(2026)
-    names = unique_names(rng, N_ATTENDEES + 12)
+    names = unique_names(rng, N_ATTENDEES + 12 + N_LATE)   # same shuffle: earlier files do not change
     write_participants(rng, names[:N_ATTENDEES])
-    write_people(names[N_ATTENDEES:])
+    write_people(names[N_ATTENDEES:N_ATTENDEES + 12])
+    write_late_registrations(names[N_ATTENDEES + 12:])
     write_schedule()
     write_budget()
     print("wrote", sorted(p.name for p in OUT.iterdir()))
