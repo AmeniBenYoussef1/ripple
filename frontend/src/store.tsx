@@ -2,12 +2,12 @@
 // feed and agent timings. Every number shown in the UI comes from here, i.e. from the API.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { api } from "./api";
+import { api, ApiError, friendlyError } from "./api";
 import type { AgentName, Entry, EventState, View } from "./types";
 import { AGENT_KEY, AGENTS, applyStream, entryToView, plainStep, startView } from "./view";
 
 const STREAM_TYPES = ["started", "agent", "agent_started", "cost", "impact", "routing", "candidates",
-  "scenarios", "saved", "outbox", "questions", "done", "error"];
+  "scenarios", "saved", "outbox", "questions", "coordinator_question", "done", "error"];
 
 export interface FeedItem {
   at: number | null;          // null = rebuilt from the saved entry (no live timestamp)
@@ -24,16 +24,23 @@ interface Store {
   select: (id: string) => void;
   busy: boolean;
   error: string | null;
+  errorDetail: string | null;          // technical text, shown only in Behind the scenes
   clearError: () => void;
+  notice: Notice | null;               // success messages
+  clearNotice: () => void;
+  pending: string | null;              // what is running: "report", "choose:B", "answer", "approve"
   feed: FeedItem[];
   timing: Timing;
   report: (text: string) => Promise<void>;
   choose: (scenarioId: string) => Promise<void>;
+  answer: (text: string) => Promise<void>;
   approve: (ids: string[]) => Promise<void>;
   reset: () => Promise<void>;
   analyze: (files: File[]) => Promise<boolean>;
   confirmSetup: () => Promise<void>;
 }
+
+export interface Notice { text: string; target?: "outbox" | "question" }
 
 const Ctx = createContext<Store | null>(null);
 
@@ -108,6 +115,18 @@ export function RippleProvider({ children }: { children: ReactNode }) {
   const [live, setLive] = useState<View | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const [pending, setPending] = useState<string | null>(null);
+  const fail = useCallback((e: unknown) => {
+    if (e instanceof ApiError) {
+      setError(e.message);
+      setErrorDetail(e.detail);
+    } else {
+      setError(friendlyError(500, ""));
+      setErrorDetail(e instanceof Error ? e.message : String(e));
+    }
+  }, []);
   const [feeds, setFeeds] = useState<Record<string, FeedItem[]>>(() => load("ripple.feeds", {}));
   const [timings, setTimings] = useState<Record<string, Timing>>(() => load("ripple.timings", {}));
   const busyRef = useRef(false);
@@ -124,8 +143,8 @@ export function RippleProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    refresh().catch((e) => setError(e.message));
-  }, [refresh]);
+    refresh().catch(fail);
+  }, [refresh, fail]);
 
   // One SSE connection for the whole app; messages count only while a request runs.
   useEffect(() => {
@@ -153,7 +172,8 @@ export function RippleProvider({ children }: { children: ReactNode }) {
         setState((s) => s && { ...s, total_cost: d.total, costs: [...s.costs, { disruption: id, agent: d.agent, cost: d.cost }] });
       }
       if (type === "error") {
-        setError(d.message);
+        setError(friendlyError(500, d.message));
+        setErrorDetail(d.message);
         return;
       }
       setLive((v) => (type === "started" ? startView(d.disruption_id, d.text) : v ? applyStream(v, type, d) : v));
@@ -162,30 +182,39 @@ export function RippleProvider({ children }: { children: ReactNode }) {
     return () => es.close();
   }, []);
 
-  const run = useCallback(async (work: () => Promise<unknown>, startLive?: View) => {
+  const run = useCallback(async <T,>(what: string, work: () => Promise<T>, startLive?: View): Promise<T | null> => {
     setError(null);
+    setNotice(null);
+    setPending(what);
     setBusy(true);
+    let result: T | null = null;
     busyRef.current = true;
     if (startLive) {
       liveId.current = startLive.id;
       setLive(startLive);
     }
     try {
-      await work();
+      result = await work();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      fail(e);
     } finally {
       busyRef.current = false;
       setBusy(false);
+      setPending(null);
       try {
         const s = await refresh();
-        if (startLive) setSelected(startLive.id === "pending" ? s.history.at(-1)?.id : startLive.id);
+        const reopened = (result as { id?: string; reopened?: boolean } | null)?.reopened;
+        if (startLive) {
+          setSelected(reopened ? (result as { id: string }).id
+            : startLive.id === "pending" ? s.history.at(-1)?.id : startLive.id);
+        }
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+        fail(e);
       }
       setLive(null);
     }
-  }, [refresh]);
+    return result;
+  }, [refresh, fail]);
 
   const entry = state?.history.find((h) => h.id === selected);
   const view = live ?? (entry ? entryToView(entry) : undefined);
@@ -193,16 +222,32 @@ export function RippleProvider({ children }: { children: ReactNode }) {
   const timing = view ? timings[view.id] ?? {} : {};
 
   const store: Store = useMemo(() => ({
-    state, view, selected, busy, error, feed, timing,
+    state, view, selected, busy, error, errorDetail, feed, timing, notice, pending,
     select: setSelected,
     clearError: () => setError(null),
-    report: (text: string) => run(() => api.disrupt(text), startView("pending", text)),
+    clearNotice: () => setNotice(null),
+    report: async (text: string) => {
+      const r = await run("report", () => api.disrupt(text), startView("pending", text));
+      if (r?.reopened) setNotice({ text: "You already reported this problem, so Ripple reopened it instead of starting over." });
+    },
     choose: async (sid: string) => {
       if (!view) return;
       const base: View = { ...view, chosen: sid, agents: { ...view.agents, coordinator: { status: "working", detail: "Starting…" } } };
-      await run(() => api.choose(sid), base);
+      const r = await run(`choose:${sid}`, () => api.choose(sid), base);
+      if (r?.status === "question") setNotice({ text: `Option ${sid} approved. The Coordinator has one question before writing the messages.`, target: "question" });
+      else if (r) setNotice({ text: `Option ${sid} approved. ${r.outbox.length} messages are ready for your review.`, target: "outbox" });
     },
-    approve: (ids: string[]) => run(() => api.approve(ids)),
+    answer: async (text: string) => {
+      if (!view) return;
+      const base: View = { ...view, agents: { ...view.agents, coordinator: { status: "working", detail: "Reading your answer…" } } };
+      const r = await run("answer", () => api.answer(text, view.id), base);
+      if (r?.status === "question") setNotice({ text: "The Coordinator needs one more answer.", target: "question" });
+      else if (r) setNotice({ text: `Thanks. ${r.outbox.length} messages are ready for your review.`, target: "outbox" });
+    },
+    approve: async (ids: string[]) => {
+      const r = await run("approve", () => api.approve(ids));
+      if (r) setNotice({ text: `${r.approved.length} message${r.approved.length === 1 ? "" : "s"} approved. Nothing has been sent: copy or export them when you are ready.` });
+    },
     analyze: async (files: File[]) => {
       // own flow: the agent stream of a setup is shown by the setup page, not the workspace
       setError(null);
@@ -216,7 +261,7 @@ export function RippleProvider({ children }: { children: ReactNode }) {
         if (r.status === "questions") setError("The Impact Analyst needs more information: " + (r.questions ?? []).map((q) => q.prompt).join(" "));
         return r.status === "analyzed";
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+        fail(e);
         return false;
       } finally {
         setBusy(false);
@@ -226,15 +271,15 @@ export function RippleProvider({ children }: { children: ReactNode }) {
       try {
         setState(await api.confirmSetup());
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+        fail(e);
       }
     },
     reset: async () => {
-      await run(() => api.reset());
+      await run("reset", () => api.reset());
       setFeeds({});
       setTimings({});
     },
-  }), [state, view, selected, busy, error, feed, timing, run]);
+  }), [state, view, selected, busy, error, errorDetail, feed, timing, notice, pending, run, fail]);
 
   return <Ctx.Provider value={store}>{children}</Ctx.Provider>;
 }

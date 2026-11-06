@@ -369,3 +369,16 @@ textarea:focus { outline: none; border-color: var(--raspberry); }
 
 .col-title { font-size: 13px; font-weight: 800; fill: var(--muted); text-anchor: middle; letter-spacing: 0.4px; text-transform: uppercase; }
 .edge-idle { stroke-opacity: 0.55; }
+
+/* ---- feedback ---- */
+.notice { max-width: 1240px; margin: 0 auto 16px; display: flex; align-items: center; gap: 10px; background: #fff; border: 1px solid var(--teal); border-left: 5px solid var(--teal); color: var(--ink); border-radius: 12px; padding: 10px 12px 10px 16px; font-weight: 600; box-shadow: var(--shadow); animation: feedIn 0.3s ease; }
+.notice svg:first-child { color: var(--teal-dark); flex: none; }
+.notice span { flex: 1; }
+.question-box { border: 1px solid var(--coral); background: #FFF8F4; border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; scroll-margin-top: 20px; }
+.question-box .row svg { color: var(--coral-dark); }
+.answer-row { display: flex; gap: 8px; }
+.text-input { flex: 1; min-width: 0; border: 2px solid var(--cream); border-radius: 12px; padding: 9px 12px; font: 14px var(--font); color: var(--ink); background: #fff; }
+.text-input:focus { outline: none; border-color: var(--teal-dark); }
+.text-input:disabled { background: var(--bg); }
+.tech { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: var(--muted); }
+#outbox-card { scroll-margin-top: 20px; }

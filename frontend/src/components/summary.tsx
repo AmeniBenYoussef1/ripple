@@ -61,7 +61,7 @@ const usd = (v: string | number | null | undefined) => (v == null || v === "" ? 
 
 /** Technical details for the curious (and for the jury): runs, skips, cost, savings, mode. */
 export function BehindTheScenes({ view, open = false }: { view?: View; open?: boolean }) {
-  const { state } = useRipple();
+  const { state, errorDetail } = useRipple();
   if (!state) return null;
   const replay = state.demo_mode;
   const title = (a: string) => AGENTS.find((x) => x.name === a)?.title ?? a;
@@ -88,6 +88,7 @@ export function BehindTheScenes({ view, open = false }: { view?: View; open?: bo
           <dt>Agent runs</dt><dd>{state.costs.length} in total{view?.routing ? ` · this problem: ${view.routing.run.map(title).join(", ") || "none"}` : ""}</dd>
           <dt>Cost</dt><dd>{usd(state.total_cost)} total{view?.costs ? ` · ${usd(thisCost)} this problem` : ""}
             {replay && <span className="tag tag-replay">recorded — $0 spent now</span>}</dd>
+          {errorDetail && <><dt>Last error</dt><dd className="tech">{errorDetail}</dd></>}
           <dt>≈ Saved</dt><dd>{usd(state.saved_total)}{est ? " (partly estimated from recorded runs)" : ""} by not waking agents a problem didn't need</dd>
         </dl>
         {view && <div>

@@ -151,9 +151,10 @@ class Runner:
                 await out
 
     async def call(self, slug: str, agent: str, message: str, *, thread_name: str,
-                   file_ids: Optional[list[str]] = None, check=None) -> AgentResult:
+                   file_ids: Optional[list[str]] = None, check=None, name: Optional[str] = None,
+                   thread_id: Optional[str] = None, extra: Optional[dict] = None) -> AgentResult:
         key, shape, max_steps = SPEC[agent]
-        path = self._fixture(slug, agent)
+        path = self._fixture(slug, name or agent)   # name: e.g. "coordinator-B", one recording per option
         if self.demo or (self.prefer_recordings and path.exists()):
             if not path.exists():
                 raise OrchestratorError(f"DEMO_MODE: no recording at {path.relative_to(self.fixtures_dir.parent)}")
@@ -161,8 +162,8 @@ class Runner:
         if self.client is None:
             raise OrchestratorError("no Cominty client (set DEMO_MODE=true to replay recordings)")
         res = await call_agent(self.client, key, message, shape, file_ids=file_ids, on_event=self.on_event,
-                               thread_name=thread_name, max_steps=max_steps, check=check)
-        self._record(path, agent, message, res)
+                               thread_name=thread_name, max_steps=max_steps, check=check, thread_id=thread_id)
+        self._record(path, agent, message, res, extra)
         return res
 
     async def _replay(self, path: Path, key: str, shape: type[BaseModel]) -> AgentResult:
@@ -191,13 +192,14 @@ class Runner:
             if hasattr(out, "__await__"):
                 await out
 
-    def _record(self, path: Path, agent: str, message: str, res: AgentResult) -> None:
+    def _record(self, path: Path, agent: str, message: str, res: AgentResult, extra: Optional[dict] = None) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         rec = {"agent": agent, "recorded_at": now_iso(), "thread_id": res.thread_id, "cost": str(res.cost),
                "message": message, "raw": res.raw,
                "data": res.data.model_dump(mode="json", by_alias=True) if res.data else None,
                "questions": [q.model_dump() for q in res.questions], "events": res.events,
-               "agent_files": [{"name": f.name, "has_url": bool(getattr(f, "url", ""))} for f in res.files]}
+               "agent_files": [{"name": f.name, "has_url": bool(getattr(f, "url", ""))} for f in res.files],
+               **(extra or {})}
         path.write_text(json.dumps(rec, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
     async def upload(self, paths: list[Path]) -> list[str]:
@@ -513,6 +515,11 @@ def confirm_setup(event: Event) -> dict[str, Any]:
 
 async def handle_disruption(event: Event, text: str, runner: Runner, area: Optional[str] = None) -> dict[str, Any]:
     slug = slugify(text)
+    # The same problem reported twice: reopen it instead of running the agents again.
+    same = next((h for h in event.data["history"] if h.get("fixture") == slug and h.get("status") == "ready"), None)
+    if same is not None:
+        await runner.stage("reopened", {"disruption_id": same["id"]})
+        return {**same, "reopened": True}
     did = f"d{len(event.data['history']) + 1}-{slug}"
     area = event.data.get("search_area", "") if area is None else area
     model = event.model
@@ -618,7 +625,7 @@ async def choose_scenario(event: Event, scenario_id: Optional[str], runner: Runn
     entry = next((h for h in history if h["id"] == disruption_id), None) if disruption_id else (history or [None])[-1]
     if entry is None or entry.get("status") != "ready":
         raise OrchestratorError("no disruption ready for a choice")
-    if entry.get("coordinator") == "done":
+    if entry.get("coordinator") in ("done", "question"):
         raise OrchestratorError(f"a scenario was already chosen for {entry['id']}")
     scenario = None
     if scenario_id is not None:
@@ -629,11 +636,23 @@ async def choose_scenario(event: Event, scenario_id: Optional[str], runner: Runn
         if not info["feasible"]:
             raise OrchestratorError(f"scenario {scenario_id} fails a hard limit: {info['violations']}")
     await _coordinate(event, entry, scenario, runner)
-    await runner.stage("done", {"disruption_id": entry["id"], "coordinator": "done"})
-    return {"disruption": entry["id"], "chosen": scenario_id, "outbox": entry["outbox"],
+    await runner.stage("done", {"disruption_id": entry["id"], "coordinator": entry["coordinator"]})
+    return {"disruption": entry["id"], "chosen": scenario_id, "status": entry["coordinator"],
+            "coordinator_question": entry.get("coordinator_question", []), "outbox": entry["outbox"],
             "revised_schedule": entry["revised_schedule"], "volunteer_tasks": entry["volunteer_tasks"],
             "files": entry["files"], "questions": entry.get("questions", []),
             "cost": entry["costs"].get("coordinator")}
+
+
+def coordinator_name(scenario: Optional[dict]) -> str:
+    """Recording name: one Coordinator reply per option ("coordinator-B"), or "coordinator" when nothing was chosen."""
+    return f"coordinator-{scenario['id']}" if scenario else "coordinator"
+
+
+def recorded_options(entry: dict, fixtures_dir: Path) -> list[str]:
+    """Options of a problem whose Coordinator reply is recorded (what Replay can show)."""
+    folder = fixtures_dir / entry.get("fixture", "")
+    return [s["id"] for s in entry.get("scenarios", []) if (folder / f"coordinator-{s['id']}.json").exists()]
 
 
 async def _coordinate(event: Event, entry: dict, scenario: Optional[dict], runner: Runner) -> None:
@@ -646,15 +665,70 @@ async def _coordinate(event: Event, entry: dict, scenario: Optional[dict], runne
     file_ids = await runner.upload([DATA / "people.csv"])
     res = await runner.call(entry["fixture"], "coordinator",
                             coordinator_message(model, slice_ids, effects, entry["disruption"], scenario),
-                            thread_name=f"{entry['text']} · Coordinator", file_ids=file_ids or None)
-    add_cost(event, entry["id"], "coordinator", res.cost)
-    entry["costs"]["coordinator"] = str(res.cost)
-    await runner.stage("cost", {"agent": "coordinator", "cost": str(res.cost), "total": str(total_cost(event))})
-
-    if scenario is not None:
+                            thread_name=f"{entry['text']} · Coordinator", file_ids=file_ids or None,
+                            name=coordinator_name(scenario))
+    if scenario is not None:   # the organizer's choice holds even if the Coordinator asks a question
         model = apply_scenario(model, entry["disruption"]["node"], entry["disruption"]["kind"],
                                Scenario.model_validate(scenario))
         event.set_model(model)
+    entry["chosen"] = scenario["id"] if scenario else None
+    await _finish_coordination(event, entry, res, runner)
+
+
+async def answer_question(event: Event, answer: str, runner: Runner, disruption_id: Optional[str] = None) -> dict[str, Any]:
+    """The organizer answers the Coordinator's clarifying question, in the same Cominty thread."""
+    history = event.data["history"]
+    entry = next((h for h in history if h["id"] == disruption_id), None) if disruption_id else \
+        next((h for h in reversed(history) if h.get("coordinator") == "question"), None)
+    if entry is None or entry.get("coordinator") != "question":
+        raise OrchestratorError("no question is waiting for an answer")
+    answer = answer.strip()
+    if not answer:
+        raise OrchestratorError("write an answer first")
+    scenario = next((s for s in entry["scenarios"] if s["id"] == entry.get("chosen")), None)
+    await runner.stage("agent_started", {"agent": "coordinator"})
+    res = await runner.call(entry["fixture"], "coordinator",
+                            f"The organizer answers: {answer}\n\nNow reply with the update JSON as asked before.",
+                            thread_name=f"{entry['text']} · Coordinator", thread_id=entry.get("coordinator_thread"),
+                            name=f"{coordinator_name(scenario)}-answer-{slugify(answer)[:40]}",
+                            extra={"answer": answer})
+    entry.setdefault("answers", []).append({"answer": answer, "at": now_iso()})
+    await _finish_coordination(event, entry, res, runner)
+    await runner.stage("done", {"disruption_id": entry["id"], "coordinator": entry["coordinator"]})
+    return {"disruption": entry["id"], "status": entry["coordinator"], "outbox": entry["outbox"],
+            "coordinator_question": entry.get("coordinator_question", []), "files": entry["files"]}
+
+
+def recorded_answers(entry: dict, fixtures_dir: Path) -> list[str]:
+    """Answers to the Coordinator's question that Replay can show."""
+    if entry.get("coordinator") != "question" or not entry.get("chosen"):
+        return []
+    folder = fixtures_dir / entry.get("fixture", "")
+    out = []
+    for f in sorted(folder.glob(f"coordinator-{entry['chosen']}-answer-*.json")):
+        try:
+            out.append(json.loads(f.read_text(encoding="utf-8"))["answer"])
+        except (KeyError, ValueError, OSError):
+            continue
+    return out
+
+
+async def _finish_coordination(event: Event, entry: dict, res: AgentResult, runner: Runner) -> None:
+    """Turn a Coordinator reply into drafts and files, or keep its question for the organizer."""
+    model = event.model
+    routing = entry["routing"]
+    add_cost(event, entry["id"], "coordinator", res.cost)
+    entry["costs"]["coordinator"] = str(Decimal(entry["costs"].get("coordinator", "0")) + res.cost)
+    entry["coordinator_thread"] = res.thread_id or entry.get("coordinator_thread")
+    await runner.stage("cost", {"agent": "coordinator", "cost": str(res.cost), "total": str(total_cost(event))})
+
+    if res.data is None and res.questions:
+        q = [x.model_dump() for x in res.questions]
+        entry.update(coordinator="question", coordinator_question=q, outbox=[], files=[],
+                     revised_schedule=[], volunteer_tasks=[])
+        event.save()
+        await runner.stage("coordinator_question", {"disruption_id": entry["id"], "questions": q})
+        return
 
     out = res.data.model_dump(mode="json") if res.data else {"messages": [], "revised_schedule": [], "volunteer_tasks": []}
     drafts = out["messages"]
@@ -665,9 +739,8 @@ async def _coordinate(event: Event, entry: dict, scenario: Optional[dict], runne
     if "coordinator" in routing.get("hashes", {}) and res.data is not None:
         event.data["cache"]["coordinator"] = {"hash": routing["hashes"]["coordinator"], "output": out}
 
-    entry.update(chosen=scenario["id"] if scenario else None, coordinator="done", outbox=messages,
-                 revised_schedule=out["revised_schedule"], volunteer_tasks=out["volunteer_tasks"], files=files,
-                 questions=entry.get("questions", []) + [q.model_dump() for q in res.questions])
+    entry.update(coordinator="done", coordinator_question=[], outbox=messages,
+                 revised_schedule=out["revised_schedule"], volunteer_tasks=out["volunteer_tasks"], files=files)
     event.save()
     await runner.stage("outbox", {"disruption_id": entry["id"], "outbox": messages, "files": files,
                                   "revised_schedule": out["revised_schedule"],

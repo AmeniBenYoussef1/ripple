@@ -106,6 +106,19 @@ def test_reset_clears_history_and_stream(client):
     assert kinds == ["reset"]
 
 
+def test_replayable_options_and_answer_endpoint(client):
+    one = client.post("/api/events/demo/disruptions", json={"text": T1}).json()
+    s = client.get("/api/events/demo").json()
+    rec = s["replayable"][one["id"]]["options"]
+    assert one["scored"][0]["id"] in rec                 # the top option is recorded
+    missing = [x["id"] for x in one["scored"] if x["id"] not in rec]
+    if missing:
+        r = client.post(f"/api/events/demo/scenarios/{missing[0]}/choose")
+        assert r.status_code == 400 and "no recording" in r.json()["detail"]
+    r = client.post("/api/events/demo/answer", json={"text": "Room B"})
+    assert r.status_code == 400 and "no question" in r.json()["detail"]
+
+
 def test_errors_are_clear(client):
     assert client.get("/api/events/nope").status_code == 404
     r = client.post("/api/events/demo/disruptions", json={"text": "The caterer went bankrupt."})

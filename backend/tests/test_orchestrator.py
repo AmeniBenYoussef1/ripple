@@ -11,6 +11,7 @@ from app.orchestrator import (OrchestratorError, Runner, choose_scenario, handle
 
 REFERENCE = Path(__file__).resolve().parents[1] / "demo_data" / "event_model.json"
 T1, T2, T3 = "The hall just cancelled.", "Speaker 2's train is 2 hours late.", "30 late registrations."
+T2_OTHER_WORDS = "Speaker 2 will arrive two hours late."   # same problem, different text
 
 
 def rec(data, cost):
@@ -41,7 +42,7 @@ FIXTURES = {
         "impact_analyst": rec({"disruption": {"node": "venue_main_hall", "kind": "lost"}}, "0.01"),
         "resource_finder": rec({"candidates": [{"name": "Hall C", "url": "https://example.com/c", "capacity": 250}]}, "0.04"),
         "replanner": rec(SCENARIOS_1, "0.02"),
-        "coordinator": rec(OUTBOX, "0.03"),
+        "coordinator-B": rec(OUTBOX, "0.03"),
     },
     slugify(T2): {
         "impact_analyst": rec({"disruption": {"node": "workshop_s2", "kind": "delayed",
@@ -54,7 +55,18 @@ FIXTURES = {
                                               "params": {"new_size": 230}}}, "0.01"),
         "coordinator": rec(OUTBOX_3, "0.02"),
     },
+    slugify(T2_OTHER_WORDS): {
+        "impact_analyst": rec({"disruption": {"node": "workshop_s2", "kind": "delayed",
+                                              "params": {"delay_minutes": 120}}}, "0.01"),
+    },
 }
+# problem 2, option A: the Coordinator asks a question first, then answers
+FIXTURES[slugify(T2)]["coordinator-A"] = {**rec(None, "0.01"), "questions": [
+    {"prompt": "Which room for the workshop?", "options": ["Room B", "Main hall"]}]}
+FIXTURES[slugify(T2)]["coordinator-A-answer-room-b"] = {**rec({"messages": [
+    {"group": "grp_workshop", "to": "40 workshop participants", "subject": "Workshop at 12:00 in room B", "body": "..."}],
+    "revised_schedule": [{"id": "workshop_s2", "start": "12:00", "end": "13:00", "place": "Room B"}]}, "0.02"),
+    "answer": "Room B"}
 
 
 @pytest.fixture
@@ -137,10 +149,20 @@ def test_full_demo_sequence_skips_the_right_agents(setup):
     assert event.model.node("grp_attendees").attrs["size"] == 230
 
 
-def test_same_disruption_twice_serves_replanner_from_cache(setup):
+def test_same_text_twice_reopens_the_problem(setup):
+    event, runner, events, _ = setup
+    first = run(handle_disruption(event, T2, runner))
+    n_events = len(events)
+    again = run(handle_disruption(event, "  speaker 2's train is 2 HOURS late ", runner))
+    assert again["reopened"] is True and again["id"] == first["id"]
+    assert len(event.data["history"]) == 1                 # no duplicate
+    assert len(events) == n_events                          # no agent ran
+
+
+def test_same_problem_in_other_words_serves_replanner_from_cache(setup):
     event, runner, _, _ = setup
     run(handle_disruption(event, T2, runner))
-    again = run(handle_disruption(event, T2, runner))
+    again = run(handle_disruption(event, T2_OTHER_WORDS, runner))
     assert "replanner" in again["routing"]["cached"]
     assert "replanner" not in again["costs"]
     assert again["scored"][0]["id"] == "A"               # cached scenarios are still scored
@@ -179,7 +201,7 @@ def test_node_checker_rejects_delay_on_a_group():
 from app.orchestrator import FIXTURES as RECORDED, GENERATED_MODEL  # noqa: E402
 
 
-@pytest.mark.skipif(not (RECORDED / slugify(T1) / "coordinator.json").exists(), reason="no recorded live run")
+@pytest.mark.skipif(not list((RECORDED / slugify(T1)).glob("coordinator-*.json")), reason="no recorded live run")
 def test_recorded_live_run_replays_the_demo(tmp_path):
     event = new_event("replay", model_path=GENERATED_MODEL, events_dir=tmp_path)
     runner = Runner(demo=True, fixtures_dir=RECORDED)
@@ -264,3 +286,40 @@ def test_replay_paces_recorded_steps(setup, monkeypatch):
     assert all(e["replay"] for e in impact_events)
     assert impact_events[-1]["event"] == "Replay"
     assert len(sleeps) >= 1 and all(0.3 <= x <= 0.8 for x in sleeps[:1])   # one pause per running step
+
+
+# ---- per-option recordings and the Coordinator's questions ---------------------------------
+
+def test_replay_without_a_recording_for_that_option_says_so(setup):
+    event, runner, _, _ = setup
+    run(handle_disruption(event, T1, runner))
+    with pytest.raises(OrchestratorError, match="no recording"):
+        run(choose_scenario(event, "C", runner))           # only B is recorded
+    assert event.data["history"][0]["coordinator"] == "waiting_for_choice"   # nothing changed
+
+
+def test_recorded_options_lists_what_replay_can_show(setup):
+    from app.orchestrator import recorded_options
+    event, runner, _, tmp = setup
+    one = run(handle_disruption(event, T1, runner))
+    assert recorded_options(one, tmp / "fixtures") == ["B"]
+
+
+def test_coordinator_question_then_answer(setup):
+    from app.orchestrator import answer_question, recorded_answers
+    event, runner, _, tmp = setup
+    run(handle_disruption(event, T2, runner))
+    out = run(choose_scenario(event, "A", runner))
+    assert out["status"] == "question" and out["outbox"] == []
+    assert out["coordinator_question"][0]["prompt"] == "Which room for the workshop?"
+    entry = event.data["history"][0]
+    assert entry["chosen"] == "A" and entry["coordinator"] == "question"
+    assert recorded_answers(entry, tmp / "fixtures") == ["Room B"]
+    with pytest.raises(OrchestratorError, match="already chosen"):
+        run(choose_scenario(event, "B", runner))           # first answer the question
+    done = run(answer_question(event, "Room B", runner))
+    assert done["status"] == "done" and done["outbox"][0]["subject"] == "Workshop at 12:00 in room B"
+    assert entry["answers"][0]["answer"] == "Room B"
+    assert Decimal(entry["costs"]["coordinator"]) == Decimal("0.03")   # question + answer
+    with pytest.raises(OrchestratorError, match="no question"):
+        run(answer_question(event, "Room B", runner))

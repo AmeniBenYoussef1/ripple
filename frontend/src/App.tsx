@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { CheckCircle2, X } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Sidebar } from "./components/Shell";
@@ -7,7 +7,13 @@ import { SetupPage } from "./SetupPage";
 import { RippleProvider, useRipple } from "./store";
 
 function Layout() {
-  const { state, error, clearError } = useRipple();
+  const { state, error, clearError, notice, clearNotice } = useRipple();
+  // after a success, bring the result into view (e.g. the Outbox after "Approve plan")
+  useEffect(() => {
+    if (!notice?.target) return;
+    const t = window.setTimeout(() => document.getElementById(`${notice.target}-card`)?.scrollIntoView({ behavior: "smooth", block: "start" }), 150);
+    return () => window.clearTimeout(t);
+  }, [notice]);
   const nav = useNavigate();
   const loc = useLocation();
   const checked = useRef(false);
@@ -25,6 +31,12 @@ function Layout() {
           <div className="alert" role="alert">
             <span>{error}</span>
             <button type="button" className="icon-btn" aria-label="Dismiss" onClick={clearError}><X size={16} /></button>
+          </div>
+        )}
+        {notice && (
+          <div className="notice" role="status">
+            <CheckCircle2 size={18} /><span>{notice.text}</span>
+            <button type="button" className="icon-btn" aria-label="Dismiss" onClick={clearNotice}><X size={16} /></button>
           </div>
         )}
         {!state ? (

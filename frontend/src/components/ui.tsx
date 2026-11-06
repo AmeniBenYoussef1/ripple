@@ -32,7 +32,7 @@ export function phaseOf(v: View, busy: boolean): Phase {
   if (!v.impact && v.status !== "questions") return "analysis";
   if (v.status === "questions") return "analysis";
   if (busy && v.coordinator !== "waiting_for_choice" && !drafts.length) return "planning";
-  if (v.coordinator === "waiting_for_choice") return "review";
+  if (v.coordinator === "waiting_for_choice" || v.coordinator === "question") return "review";
   if (drafts.length && drafts.some((m) => m.status === "draft")) return "review";
   if (busy) return "planning";
   return "done";
@@ -43,6 +43,7 @@ export function statusText(v: View, busy: boolean): { text: string; tone: "alert
   if (v.status === "questions") return { text: "Needs your answer", tone: "warn" };
   if (busy) return { text: p === "analysis" ? "Analysing" : "Agents working", tone: "alert" };
   if (v.coordinator === "waiting_for_choice") return { text: "Pick an option", tone: "warn" };
+  if (v.coordinator === "question") return { text: "Needs your answer", tone: "warn" };
   if (p === "review") return { text: "Messages to review", tone: "warn" };
   return { text: "Handled", tone: "ok" };
 }

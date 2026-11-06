@@ -81,6 +81,7 @@ export interface Scored {
   explanation: string[];
   tied: boolean;
   tied_with: string[];
+  spare_seats?: number | null;
 }
 
 export interface Message {
@@ -122,7 +123,9 @@ export interface Entry {
   candidates?: Candidate[];
   scenarios?: Scenario[];
   scored?: Scored[];
-  coordinator?: "waiting_for_choice" | "running" | "done" | "skipped" | "cached";
+  coordinator?: "waiting_for_choice" | "running" | "done" | "skipped" | "cached" | "question";
+  coordinator_question?: Question[];
+  answers?: { answer: string; at: string }[];
   costs?: Record<string, string>;
   saved?: Record<string, Saved>;
   saved_total?: string;
@@ -144,6 +147,8 @@ export interface EventState {
   saved_total: string;
   files: string[];
   setup?: SetupInfo;
+  /** Replay only: what is recorded per problem (anything else is Live mode only). */
+  replayable?: Record<string, { options: string[]; answers: string[] }> | null;
 }
 
 export interface SetupInfo {

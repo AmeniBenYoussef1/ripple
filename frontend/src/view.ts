@@ -53,6 +53,9 @@ export function agentsFor(e: Partial<Entry>): Record<AgentName, AgentView> {
   if (e.coordinator === "waiting_for_choice") {
     a.coordinator = { status: "waiting", detail: "Writes the messages once you pick an option" };
   }
+  if (e.coordinator === "question") {
+    a.coordinator = { status: "waiting", detail: "Asked you one question before writing the messages" };
+  }
   return a;
 }
 
@@ -122,6 +125,11 @@ export function applyStream(view: View, type: string, data: Record<string, any>)
       v.status = "questions";
       v.questions = data.questions;
       set("impact_analyst", "done", "Asked you a question instead of guessing");
+      break;
+    case "coordinator_question":
+      v.coordinator = "question";
+      v.coordinator_question = data.questions;
+      set("coordinator", "waiting", "Asked you one question before writing the messages");
       break;
     case "done":
       if (data.coordinator === "waiting_for_choice") {

@@ -82,7 +82,7 @@ async def flow(runner: Runner) -> None:
         print(f"\n=== {i}. {text}")
         out = await handle_disruption(event, text, runner, area=AREA)
         show_disruption(out)
-        if i == 1 and out["status"] == "ready":
+        if i in (1, 2) and out["status"] == "ready" and out["scored"]:   # record the top option of each problem
             top = next((s for s in out["scored"] if s["feasible"]), None)
             if top is None:
                 print("  no feasible scenario to choose")

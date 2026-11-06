@@ -128,14 +128,61 @@ function ScoreLines({ s }: { s: Scored }) {
       <li><span>Worst impact</span><strong>{s.worst_group ? labelOf(m, s.worst_group) : "nobody"} · {s.worst_burden_min} min/person <em>est.</em></strong></li>
       <li><span>Total impact</span><strong>{s.total_burden_person_min.toLocaleString("en-GB")} person-min <em>est.</em></strong></li>
       <li><span>Extra cost</span><strong>{costText(s.extra_cost_eur)}</strong></li>
+      <li><span>Spare seats</span><strong>{s.spare_seats ?? "unknown"}</strong></li>
       <li><span>Still to confirm</span><strong>{s.unconfirmed}</strong></li>
       {s.tied && <li className="tie"><span>Tie</span><strong>Same score as {s.tied_with.join(", ")}: your call</strong></li>}
     </ul>
   );
 }
 
+/** The Coordinator asked a question before writing the messages: answer it here. */
+function CoordinatorQuestion({ view }: { view: View }) {
+  const { state, answer, busy, pending } = useRipple();
+  const [text, setText] = useState("");
+  const replay = !!state?.demo_mode;
+  const recorded = state?.replayable?.[view.id]?.answers ?? [];
+  const sending = pending === "answer";
+  return (
+    <div className="question-box" id="question-card">
+      <div className="row"><Sparkles size={16} /><strong>The Coordinator needs one answer before writing the messages</strong></div>
+      <p className="sub">It asks instead of guessing, so no message says something wrong.</p>
+      {(view.coordinator_question ?? []).map((q, i) => (
+        <div key={i} className="stack-sm">
+          <p>{q.prompt}</p>
+          <div className="row wrap">
+            {q.options.map((o) => (
+              <button key={o} type="button" className="btn btn-secondary btn-sm" disabled={busy || replay}
+                title={replay ? "Live mode only" : undefined} onClick={() => answer(o)}>{o}</button>
+            ))}
+          </div>
+        </div>
+      ))}
+      {replay && recorded.length > 0 && (
+        <div className="stack-sm">
+          <span className="eyebrow">Recorded answer</span>
+          {recorded.map((r) => (
+            <button key={r} type="button" className="btn btn-primary" disabled={busy} onClick={() => answer(r)}>
+              {sending ? <Loader2 size={16} className="spin" /> : <Send size={16} />}{r}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="answer-row">
+        <input className="text-input" value={text} onChange={(e) => setText(e.target.value)} disabled={busy || replay}
+          placeholder={replay ? "Your own answer: Live mode only" : "Or write your own answer…"}
+          onKeyDown={(e) => { if (e.key === "Enter" && text.trim()) answer(text.trim()); }} aria-label="Your answer" />
+        <button type="button" className="btn btn-secondary" disabled={busy || replay || !text.trim()} onClick={() => answer(text.trim())}>
+          {sending && !replay ? <Loader2 size={16} className="spin" /> : <Send size={16} />}Send
+        </button>
+      </div>
+      {replay && <p className="fine">Replay shows the recorded answer. Other answers need Live mode.</p>}
+    </div>
+  );
+}
+
 export function PlanCard({ view, onNewProblem }: { view: View; onNewProblem: () => void }) {
-  const { choose, busy, report } = useRipple();
+  const { choose, busy, report, state, pending } = useRipple();
+  const liveOnly = (sid: string) => !!state?.demo_mode && !(state.replayable?.[view.id]?.options ?? []).includes(sid);
   const [asking, setAsking] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const othersRef = useRef<HTMLDivElement>(null);
@@ -178,6 +225,7 @@ export function PlanCard({ view, onNewProblem }: { view: View; onNewProblem: () 
   const toConfirm = scen?.to_confirm ?? [];
   const canChoose = view.coordinator === "waiting_for_choice" && !busy;
   const chosen = view.chosen === top.id;
+  const approving = pending === `choose:${top.id}`;
 
   return (
     <section className="card">
@@ -214,11 +262,16 @@ export function PlanCard({ view, onNewProblem }: { view: View; onNewProblem: () 
         </div>
       )}
 
-      {!chosen && view.coordinator === "waiting_for_choice" && (
+      {view.coordinator === "question" && <CoordinatorQuestion view={view} />}
+
+      {(!chosen || approving) && (view.coordinator === "waiting_for_choice" || approving) && (
         <div className="plan-actions">
-          <button type="button" className="btn btn-primary" disabled={!canChoose || !top.feasible} onClick={() => choose(top.id)}>
-            <CheckCircle2 size={16} />Approve plan
+          <button type="button" className="btn btn-primary" disabled={!canChoose || !top.feasible || liveOnly(top.id)}
+            onClick={() => choose(top.id)} aria-busy={approving}>
+            {approving ? <Loader2 size={16} className="spin" /> : <CheckCircle2 size={16} />}
+            {approving ? "Writing the messages…" : "Approve plan"}
           </button>
+          {liveOnly(top.id) && <span className="tag" title="This option's messages were not recorded">Live mode only</span>}
           <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => setAsking(!asking)} aria-expanded={asking}>
             <ArrowRightLeft size={16} />Request changes
           </button>
@@ -242,13 +295,15 @@ export function PlanCard({ view, onNewProblem }: { view: View; onNewProblem: () 
                 <div className="other-title"><span className="other-id">{s.id}</span>{s.title}</div>
                 <div className="sub">
                   {s.feasible
-                    ? `${s.tied ? `#${s.rank} tied` : `#${s.rank}`} · worst ${s.worst_burden_min} min/person est. · cost ${costText(s.extra_cost_eur)}`
+                    ? `${s.tied ? `#${s.rank} tied` : `#${s.rank}`} · worst ${s.worst_burden_min} min/person est. · cost ${costText(s.extra_cost_eur)}${s.spare_seats != null ? ` · ${s.spare_seats} spare seats` : ""}`
                     : <span className="reason">Fails a hard limit: {s.violations.join("; ")}</span>}
                 </div>
               </div>
-              {s.feasible && view.coordinator === "waiting_for_choice" && (
-                <button type="button" className="btn btn-secondary btn-sm" disabled={!canChoose} onClick={() => choose(s.id)}>Choose {s.id}</button>
-              )}
+              {s.feasible && view.coordinator === "waiting_for_choice" && (liveOnly(s.id)
+                ? <span className="row"><span className="tag" title="This option's messages were not recorded">Live mode only</span>
+                    <button type="button" className="btn btn-secondary btn-sm" disabled>Choose {s.id}</button></span>
+                : <button type="button" className="btn btn-secondary btn-sm" disabled={!canChoose} onClick={() => choose(s.id)}>
+                    {pending === `choose:${s.id}` ? <Loader2 size={14} className="spin" /> : null}Choose {s.id}</button>)}
               {view.chosen === s.id && <span className="badge badge-ok">Chosen</span>}
             </div>
           ))}
@@ -269,7 +324,7 @@ export function OutboxCard({ view, compact = false }: { view: View; compact?: bo
   const m = state!.model;
   const open = msgs.find((x) => x.id === review);
   return (
-    <section className="card">
+    <section className="card" id={compact ? undefined : "outbox-card"}>
       <CardHead icon={<Inbox size={18} />} title="Outbox"
         sub={compact ? view.text : view.chosen ? `Drafts for option ${view.chosen}` : "One draft per affected group"}
         right={msgs.length ? <Donut done={approved} total={msgs.length} size={56} /> : null} />

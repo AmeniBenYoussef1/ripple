@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field
 
 from .agents import AgentOutputError
 from .geo import Geocoder, venue_pins
-from .orchestrator import (DATA, EVENTS, FIXTURES, GENERATED_MODEL, SETUP_MAX_BYTES, Event, OrchestratorError,
+from .orchestrator import (answer_question, recorded_answers, recorded_options, DATA, EVENTS, FIXTURES, GENERATED_MODEL, SETUP_MAX_BYTES, Event, OrchestratorError,
                            Runner, analyze_event, approve_messages, choose_scenario, confirm_setup, demo_mode,
                            handle_disruption, load_event, new_event, total_cost)
 
@@ -58,6 +58,11 @@ class SetupBody(BaseModel):
 
 class DisruptionBody(BaseModel):
     text: str = Field(min_length=1, max_length=500)
+
+
+class AnswerBody(BaseModel):
+    text: str = Field(min_length=1, max_length=1000)
+    disruption: Optional[str] = None
 
 
 class ApproveBody(BaseModel):
@@ -142,7 +147,10 @@ def create_app(events_dir: Path = EVENTS, fixtures_dir: Path = FIXTURES, model_p
     def state(event: Event) -> dict[str, Any]:
         saved = sum((Decimal(h.get("saved_total", "0")) for h in event.data["history"]), Decimal(0))
         files = sorted(p.name for p in event.files_dir.glob("*")) if event.files_dir.exists() else []
-        return {**event.data, "demo_mode": demo, "total_cost": str(total_cost(event)),
+        # Replay: which options have a recorded Coordinator reply (others are "Live mode only")
+        replayable = ({h["id"]: {"options": recorded_options(h, fixtures_dir), "answers": recorded_answers(h, fixtures_dir)}
+                       for h in event.data["history"]} if demo else None)
+        return {**event.data, "demo_mode": demo, "replayable": replayable, "total_cost": str(total_cost(event)),
                 "saved_total": str(saved), "files": files}
 
     async def guarded(event_id: str, work):
@@ -205,6 +213,12 @@ def create_app(events_dir: Path = EVENTS, fixtures_dir: Path = FIXTURES, model_p
     async def choose(event_id: str, scenario_id: str) -> dict[str, Any]:
         event = get_event(event_id)
         return await guarded(event_id, lambda: choose_scenario(event, scenario_id, runner_for(event_id)))
+
+    @app.post("/api/events/{event_id}/answer")
+    async def answer(event_id: str, body: AnswerBody) -> dict[str, Any]:
+        """Answer the Coordinator's clarifying question (same Cominty thread)."""
+        event = get_event(event_id)
+        return await guarded(event_id, lambda: answer_question(event, body.text, runner_for(event_id), body.disruption))
 
     @app.post("/api/events/{event_id}/outbox/approve")
     async def approve(event_id: str, body: ApproveBody) -> dict[str, Any]:
