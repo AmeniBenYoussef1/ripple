@@ -1,0 +1,28 @@
+{
+  "currency": "EUR",
+  "total_eur": 7500,
+  "committed": [
+    {
+      "item": "Main hall rental",
+      "eur": 2400
+    },
+    {
+      "item": "Catering (200 lunch boxes, see catering_contract.txt)",
+      "eur": 1900
+    },
+    {
+      "item": "AV equipment",
+      "eur": 600
+    },
+    {
+      "item": "Prizes",
+      "eur": 900
+    },
+    {
+      "item": "Online judge licence",
+      "eur": 200
+    }
+  ],
+  "committed_eur": 6000,
+  "remaining_eur": 1500
+}

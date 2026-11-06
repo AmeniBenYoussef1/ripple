@@ -1,0 +1,114 @@
+{
+  "event": "CodeSprint 2026 (fictional demo event)",
+  "date": "2026-11-21",
+  "venue": {
+    "name": "Main hall",
+    "address": "[FICTIONAL ADDRESS]",
+    "capacity": 220,
+    "note": "Everything below takes place at the main hall unless a room is given."
+  },
+  "commitments": [
+    {
+      "id": "volunteer_meetup",
+      "title": "Volunteer meet-up",
+      "time": "07:45",
+      "location": "Main hall",
+      "inform": [
+        "volunteers"
+      ]
+    },
+    {
+      "id": "av_setup",
+      "title": "AV setup",
+      "time": "08:00",
+      "location": "Main hall",
+      "needed_for": [
+        "opening"
+      ]
+    },
+    {
+      "id": "catering_delivery",
+      "title": "Catering delivery",
+      "time": "12:00",
+      "location": "Main hall",
+      "needed_for": [
+        "lunch"
+      ],
+      "details": "see catering_contract.txt"
+    },
+    {
+      "id": "contest_problems",
+      "title": "Contest problems",
+      "details": "prepared by the organizers"
+    },
+    {
+      "id": "online_judge",
+      "title": "Online judge",
+      "details": "hosted platform used for the rounds"
+    },
+    {
+      "id": "prizes",
+      "title": "Prizes",
+      "details": "bought in advance"
+    }
+  ],
+  "program": [
+    {
+      "id": "opening",
+      "title": "Opening",
+      "start": "09:00",
+      "end": "09:30",
+      "audience": [
+        "attendees",
+        "speakers"
+      ]
+    },
+    {
+      "id": "round_1",
+      "title": "Contest round 1",
+      "start": "09:30",
+      "end": "12:00",
+      "audience": [
+        "attendees"
+      ]
+    },
+    {
+      "id": "workshop_s2",
+      "title": "Workshop by Speaker 2",
+      "start": "10:00",
+      "end": "11:00",
+      "location": "Main hall, room B",
+      "audience": [
+        "workshop participants (workshop=yes)",
+        "Speaker 2"
+      ]
+    },
+    {
+      "id": "lunch",
+      "title": "Lunch",
+      "start": "12:00",
+      "end": "13:00",
+      "audience": [
+        "attendees"
+      ]
+    },
+    {
+      "id": "round_2",
+      "title": "Contest round 2",
+      "start": "13:00",
+      "end": "16:00",
+      "audience": [
+        "attendees"
+      ]
+    },
+    {
+      "id": "awards",
+      "title": "Awards",
+      "start": "16:30",
+      "end": "17:00",
+      "audience": [
+        "attendees"
+      ]
+    }
+  ]
+}

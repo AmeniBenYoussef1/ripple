@@ -91,3 +91,24 @@ class Scenario(BaseModel):
     within_opening_hours: bool = True
     burdens: list[GroupBurden] = Field(default_factory=list)
     to_confirm: list[str] = Field(default_factory=list)
+
+
+# ---- Resource Finder and Coordinator outputs (see skills/ripple-contracts/reference.md) ----
+
+class Candidate(BaseModel):
+    name: str
+    url: str                                 # every web fact needs a source
+    area: str = ""
+    capacity: Optional[int] = None           # None when the page doesn't say
+    est_cost_eur: Optional[float] = None
+    fit_notes: str = ""
+    availability: str = "to confirm"         # never claimed by an agent
+
+
+class OutboxMessage(BaseModel):
+    group: str
+    to: str
+    channel: str = "email"
+    subject: str = ""
+    body: str
+    status: str = "draft"                    # stays draft until the organizer approves
