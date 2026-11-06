@@ -1,5 +1,5 @@
 // Small client for the Ripple API. Errors become friendly messages for the UI.
-import type { EventState, Message } from "./types";
+import type { EventState, Message, Venues } from "./types";
 
 export const API = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8000";
 export const EVENT_ID = "demo";
@@ -57,6 +57,7 @@ export const api = {
   choose: (sid: string) => call<unknown>(`${ev}/scenarios/${encodeURIComponent(sid)}/choose`, { method: "POST" }),
   approve: (ids: string[]) =>
     call<{ approved: Message[] }>(`${ev}/outbox/approve`, { method: "POST", body: JSON.stringify({ ids }) }),
+  venues: (disruptionId: string) => call<Venues>(`${ev}/venues?disruption=${encodeURIComponent(disruptionId)}`),
   fileUrl: (name: string) => `${API}${ev}/files/${encodeURIComponent(name)}`,
   streamUrl: () => `${API}${ev}/stream`,
 };

@@ -103,6 +103,9 @@ class Candidate(BaseModel):
     est_cost_eur: Optional[float] = None
     fit_notes: str = ""
     availability: str = "to confirm"         # never claimed by an agent
+    address: Optional[str] = None            # street address, only if the source page states it
+    lat: Optional[float] = None              # coordinates, only if the source page states them
+    lon: Optional[float] = None
 
 
 class OutboxMessage(BaseModel):

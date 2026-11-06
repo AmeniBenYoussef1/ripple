@@ -114,3 +114,22 @@ def test_errors_are_clear(client):
     assert client.post("/api/events/demo/scenarios/A/choose").status_code == 400  # nothing ready
     assert client.post("/api/events/demo/outbox/approve", json={"ids": ["x"]}).status_code == 400
     assert client.post("/api/events/bad%20id/setup").status_code == 400
+
+
+def test_venues_endpoint_uses_the_geocoder(tmp_path):
+    from app.geo import Geocoder
+
+    async def fetch(q):
+        return (48.87, 2.34)
+    app = create_app(events_dir=tmp_path / "events", fixtures_dir=FIXTURES, model_path=GENERATED_MODEL,
+                     demo=True, replay_delay=(0, 0), geocoder=Geocoder(tmp_path / "geo.json", fetch))
+    with TestClient(app) as c:
+        c.post("/api/events/demo/setup")
+        assert c.get("/api/events/demo/venues").json()["candidates"] == []
+        c.post("/api/events/demo/disruptions", json={"text": T1})
+        out = c.get("/api/events/demo/venues").json()
+        assert out["lost"]["lat"] is None                         # the demo hall's address is fictional
+        assert len(out["candidates"]) >= 3
+        assert all(v["url"].startswith("http") for v in out["candidates"])
+        with_address = [v for v in out["candidates"] if v["address"]]
+        assert all(v["lat"] is not None for v in with_address)

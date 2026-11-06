@@ -38,7 +38,7 @@ export function agentsFor(e: Partial<Entry>): Record<AgentName, AgentView> {
   }
   if (e.impact) {
     const n = e.impact.waves.flat().length;
-    a.impact_analyst = { status: "done", detail: `Traced ${plural(n, "affected item")} in ${plural(e.impact.waves.length, "wave")}` };
+    a.impact_analyst = { status: "done", detail: `Found ${plural(n, "affected part")} of the event` };
   }
   if (!r) return a;
   const other = (name: AgentName, done: string): AgentView => {
@@ -47,11 +47,11 @@ export function agentsFor(e: Partial<Entry>): Record<AgentName, AgentView> {
     if (r.run.includes(name)) return { status: "done", detail: done };
     return { status: "idle", detail: "" };
   };
-  a.resource_finder = other("resource_finder", `Found ${plural(e.candidates?.length ?? 0, "candidate")}, availability to confirm`);
-  a.replanner = other("replanner", `Proposed ${plural(e.scored?.length ?? 0, "scenario")}, scored by code`);
-  a.coordinator = other("coordinator", `${plural(e.outbox?.length ?? 0, "draft")} ready for your review`);
+  a.resource_finder = other("resource_finder", `Found ${plural(e.candidates?.length ?? 0, "venue option")}, availability to confirm`);
+  a.replanner = other("replanner", `Prepared ${plural(e.scored?.length ?? 0, "option")}, ranked by Ripple`);
+  a.coordinator = other("coordinator", `${plural(e.outbox?.length ?? 0, "message")} ready for your review`);
   if (e.coordinator === "waiting_for_choice") {
-    a.coordinator = { status: "waiting", detail: "Drafts ready once you pick a scenario" };
+    a.coordinator = { status: "waiting", detail: "Writes the messages once you pick an option" };
   }
   return a;
 }
@@ -87,7 +87,7 @@ export function applyStream(view: View, type: string, data: Record<string, any>)
       v.impact = { origin: data.origin, kind: data.kind, waves: data.waves, effects: data.effects, checked_ok: data.checked_ok };
       v.disruption = data.disruption;
       const n = data.waves.flat().length;
-      set("impact_analyst", "done", `Traced ${plural(n, "affected item")} in ${plural(data.waves.length, "wave")}`);
+      set("impact_analyst", "done", `Found ${plural(n, "affected part")} of the event`);
       break;
     }
     case "routing": {
@@ -102,11 +102,11 @@ export function applyStream(view: View, type: string, data: Record<string, any>)
     }
     case "candidates":
       v.candidates = data.candidates;
-      set("resource_finder", "done", `Found ${plural(data.candidates.length, "candidate")}, availability to confirm`);
+      set("resource_finder", "done", `Found ${plural(data.candidates.length, "venue option")}, availability to confirm`);
       break;
     case "scenarios":
       v.scored = data.scored;
-      set("replanner", "done", `Proposed ${plural(data.scored.length, "scenario")}, scored by code`);
+      set("replanner", "done", `Prepared ${plural(data.scored.length, "option")}, ranked by Ripple`);
       break;
     case "saved":
       v.saved = data.saved;
@@ -116,7 +116,7 @@ export function applyStream(view: View, type: string, data: Record<string, any>)
       v.outbox = data.outbox;
       v.files = data.files;
       v.coordinator = "done";
-      set("coordinator", "done", `${plural(data.outbox.length, "draft")} ready for your review`);
+      set("coordinator", "done", `${plural(data.outbox.length, "message")} ready for your review`);
       break;
     case "questions":
       v.status = "questions";
@@ -126,7 +126,7 @@ export function applyStream(view: View, type: string, data: Record<string, any>)
     case "done":
       if (data.coordinator === "waiting_for_choice") {
         v.coordinator = "waiting_for_choice";
-        set("coordinator", "waiting", "Drafts ready once you pick a scenario");
+        set("coordinator", "waiting", "Writes the messages once you pick an option");
       }
       break;
   }
@@ -155,4 +155,57 @@ export function sizeOf(model: EventModel, id: string): number | undefined {
 export function money(v: string | number | null | undefined, digits = 4): string {
   if (v === null || v === undefined || v === "") return "—";
   return Number(v).toFixed(digits);
+}
+
+// ---- client-friendly summaries (all from API data) ----
+
+export const AGENT_SUBTITLE: Record<AgentName, string> = {
+  impact_analyst: "Understanding what broke",
+  resource_finder: "Looking for alternatives",
+  replanner: "Preparing options",
+  coordinator: "Writing the messages",
+};
+
+/** "search_web: Search Paris venues" -> "Search Paris venues" (tool names mean nothing to organizers). */
+export function plainStep(text: string): string {
+  return text.replace(/^[a-z_]+:\s*/, "");
+}
+
+/** Groups that cover other groups: workshop participants are attendees, Speaker 2 is a speaker. */
+function topLevel(model: EventModel, ids: string[]) {
+  const nodes = ids.map((id) => model.nodes.find((n) => n.id === id)).filter((n): n is NonNullable<typeof n> => !!n);
+  const size = (n: (typeof nodes)[number]) => (typeof n.attrs.size === "number" ? n.attrs.size : 0);
+  const word = (n: (typeof nodes)[number]) => n.label.toLowerCase().split(/\s+/)[0].replace(/s$/, "");
+  return nodes.filter((n) => !nodes.some((o) => o !== n && o.source && o.source === n.source && size(o) > size(n) &&
+    // participants.csv lists every attendee, so any bigger group from it covers this one
+    (o.source === "participants.csv" || word(o) === word(n))));
+}
+
+export interface PeopleSummary {
+  count: number;
+  groups: { label: string; size: number }[];
+  pending: boolean;   // newcomers not counted yet (the Coordinator has not run)
+}
+
+export function peopleAffected(model: EventModel, v: View): PeopleSummary | null {
+  if (!v.impact) return null;
+  const grown = v.disruption?.kind === "resized" ? v.impact.origin : null;
+  const ids = Object.keys(v.impact.effects).filter((id) => id !== grown &&
+    model.nodes.find((n) => n.id === id)?.type === "group");
+  const groups = topLevel(model, ids).map((n) => ({ label: n.label, size: typeof n.attrs.size === "number" ? n.attrs.size : 0 }));
+  let pending = false;
+  if (grown) {
+    // after a late registration, only the newcomers are affected: counted from the update file
+    const csv = v.files?.find((f) => f.kind === "csv");
+    if (csv?.rows && v.outbox?.some((m) => m.group === "grp_newcomers")) groups.unshift({ label: "Newcomers", size: csv.rows });
+    else pending = true;
+  }
+  return { count: groups.reduce((s, g) => s + g.size, 0), groups, pending };
+}
+
+/** Parts of the event the problem did not touch. */
+export function unchanged(model: EventModel, v: View): string[] {
+  if (!v.impact) return [];
+  const touched = new Set(Object.keys(v.impact.effects));
+  return model.nodes.filter((n) => !touched.has(n.id)).map((n) => n.label);
 }

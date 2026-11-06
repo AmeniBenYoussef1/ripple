@@ -3,12 +3,14 @@ import { CalendarDays, ChevronRight, Inbox, MapPin, Plus, RotateCcw, Server, Use
 import { useNavigate } from "react-router-dom";
 import { API, EVENT_ID } from "./api";
 import { AgentsCard, LiveFeed, OutboxCard, PlanCard } from "./components/cards";
-import { StatsBar, useReport } from "./components/Shell";
+import { useReport } from "./components/Shell";
+import { BehindTheScenes, ProblemSummary } from "./components/summary";
+import { VenueCard } from "./components/VenueMap";
 import { CardHead, Pill, Stepper, phaseOf, statusText } from "./components/ui";
 import { RippleMap } from "./RippleMap";
 import { useRipple } from "./store";
 import type { EventModel } from "./types";
-import { entryToView } from "./view";
+import { entryToView, peopleAffected } from "./view";
 
 function eventFacts(m: EventModel) {
   const date = m.nodes.map((n) => n.attrs.date).find(Boolean) as string | undefined;
@@ -66,14 +68,14 @@ export function HomePage() {
             {f.venue && <li><MapPin size={16} />{f.venue}</li>}
           </ul>
           <div className="facts-row">
-            <div><span className="big">{state.history.length}</span><span className="sub">disruptions today</span></div>
+            <div><span className="big">{state.history.length}</span><span className="sub">problems today</span></div>
             <div><span className="big">{drafts}</span><span className="sub">drafts to review</span></div>
           </div>
           <button type="button" className="btn btn-secondary" onClick={() => nav("/event")}>Open workspace<ChevronRight size={16} /></button>
         </section>
 
         <section className="card">
-          <CardHead icon={<RotateCcw size={18} />} title="Disruption history" sub="Each disruption keeps its own agent threads" />
+          <CardHead icon={<RotateCcw size={18} />} title="Problem history" sub="Everything Ripple handled today, newest first" />
           {state.history.length === 0 ? (
             <p className="empty">Nothing has gone wrong yet. When it does, report it and Ripple traces what it touches.</p>
           ) : (
@@ -89,7 +91,7 @@ export function HomePage() {
                         <span className="hist-text">{h.text}</span>
                         <span className="sub">
                           {new Date(h.at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
-                          {h.routing ? ` · ${h.routing.run.length} agents woke, ${Object.keys(h.routing.skipped).length} skipped` : ""}
+                          {(() => { const p = peopleAffected(state.model, entryToView(h)); return p ? ` · ${p.count}${p.pending ? "+" : ""} people affected` : ""; })()}
                         </span>
                       </span>
                       <Pill tone={st.tone}>{st.text}</Pill>
@@ -121,7 +123,7 @@ export function WorkspacePage() {
       <header className="ws-head">
         <div className="ws-title">
           <div className="row wrap">
-            {view ? <Pill tone="alert">Disruption {number}</Pill> : <Pill tone="ok">No disruption</Pill>}
+            {view ? <Pill tone="alert">Problem {number}</Pill> : <Pill tone="ok">No problem reported</Pill>}
             {st && <Pill tone={st.tone}>{st.text}</Pill>}
           </div>
           <h1>{view ? view.text : "Event workspace"}</h1>
@@ -129,7 +131,7 @@ export function WorkspacePage() {
         </div>
         <div className="ws-actions">
           {state.history.length > 1 && (
-            <div className="seg" role="tablist" aria-label="Disruptions">
+            <div className="seg" role="tablist" aria-label="Problems">
               {state.history.map((h, i) => (
                 <button key={h.id} type="button" role="tab" aria-selected={!busy && selected === h.id}
                   className={`seg-btn ${!busy && selected === h.id ? "on" : ""}`} disabled={busy} onClick={() => select(h.id)}
@@ -142,8 +144,8 @@ export function WorkspacePage() {
       </header>
 
       <div className="ws-bar card">
-        {view ? <Stepper phase={phaseOf(view, busy)} /> : <span className="sub">Report a problem to start.</span>}
-        <StatsBar />
+        {view && <Stepper phase={phaseOf(view, busy)} />}
+        <ProblemSummary view={view} state={state} />
       </div>
 
       <div className="ws-grid">
@@ -153,7 +155,7 @@ export function WorkspacePage() {
           <CardHead title="The ripple" sub="What this problem touches, wave by wave. Grey items keep their plan."
             right={
               <div className="legend">
-                <span><i className="sw sw-origin" />Disruption</span>
+                <span><i className="sw sw-origin" />The problem</span>
                 <span><i className="sw sw-hit" />Affected</span>
                 <span><i className="sw sw-idle" />Not affected</span>
                 <span><i className="sw sw-ok" />Handled</span>
@@ -161,8 +163,9 @@ export function WorkspacePage() {
             } />
           <RippleMap model={state.model} impact={view?.impact} resolved={view?.coordinator === "done" && !busy} animateKey={view?.id ?? "none"} />
         </section>
-        <div className="span-7">{view && <PlanCard view={view} onNewProblem={rep.show} />}</div>
-        <div className="span-5">{view && <OutboxCard view={view} />}</div>
+        <div className="span-7 col">{view && <PlanCard view={view} onNewProblem={rep.show} />}{view && <VenueCard view={view} />}</div>
+        <div className="span-5 col">{view && <OutboxCard view={view} />}</div>
+        <div className="span-12"><BehindTheScenes view={view} /></div>
       </div>
       {rep.dialog}
     </div>
@@ -177,7 +180,7 @@ export function OutboxPage() {
   const withMsgs = state.history.filter((h) => (h.outbox ?? []).length);
   return (
     <div className="page">
-      <header className="ws-head"><div className="ws-title"><h1>Outbox</h1><p className="sub">Every draft, per disruption. Nothing is sent until you approve.</p></div></header>
+      <header className="ws-head"><div className="ws-title"><h1>Outbox</h1><p className="sub">Every draft, per problem. Nothing is sent until you approve.</p></div></header>
       {withMsgs.length === 0 ? (
         <section className="card"><CardHead icon={<Inbox size={18} />} title="No drafts yet" /><p className="empty">Drafts appear here once the Coordinator has written them.</p></section>
       ) : (
@@ -206,10 +209,11 @@ export function SettingsPage() {
             <dt>Event id</dt><dd>{EVENT_ID}</dd>
           </dl>
         </section>
+        <div className="span-all"><BehindTheScenes view={undefined} open /></div>
         <section className="card">
-          <CardHead icon={<RotateCcw size={18} />} title="Start over" sub="Clears every disruption, draft and file of this event" />
+          <CardHead icon={<RotateCcw size={18} />} title="Start over" sub="Clears every problem, message and file of this event" />
           <button type="button" className="btn btn-danger" disabled={busy}
-            onClick={() => { if (confirm("Start the event over? This clears all disruptions, drafts and files.")) void reset(); }}>
+            onClick={() => { if (confirm("Start the event over? This clears all problems, messages and files.")) void reset(); }}>
             <RotateCcw size={16} />Reset event
           </button>
         </section>

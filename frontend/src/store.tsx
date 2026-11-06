@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { ReactNode } from "react";
 import { api } from "./api";
 import type { AgentName, Entry, EventState, View } from "./types";
-import { AGENT_KEY, AGENTS, applyStream, entryToView, startView } from "./view";
+import { AGENT_KEY, AGENTS, applyStream, entryToView, plainStep, startView } from "./view";
 
 const STREAM_TYPES = ["started", "agent", "agent_started", "cost", "impact", "routing", "candidates",
   "scenarios", "saved", "outbox", "questions", "done", "error"];
@@ -59,23 +59,23 @@ function feedLine(type: string, d: Record<string, any>): FeedItem | null {
   switch (type) {
     case "agent":
       return d.event === "ToolCall" && d.status === "running" && d.description
-        ? { at, kind: "step", text: `${title(AGENT_KEY[d.agent] ?? d.agent)}: ${d.description}` } : null;
+        ? { at, kind: "step", text: `${title(AGENT_KEY[d.agent] ?? d.agent)}: ${plainStep(d.description)}` } : null;
     case "impact":
-      return { at, kind: "finding", text: `${d.disruption?.node ?? d.origin} is ${d.kind}: ${plural(d.waves.flat().length, "item")} affected in ${plural(d.waves.length, "wave")}` };
+      return { at, kind: "finding", text: `The problem touches ${plural(d.waves.flat().length, "part")} of the event` };
     case "routing": {
       const skipped = Object.keys(d.skipped).map(title);
-      return { at, kind: "skip", text: `Woke ${d.run.map(title).join(", ") || "no agent"}${skipped.length ? `; ${skipped.join(", ")} stay asleep` : ""}` };
+      return { at, kind: "skip", text: `Called in: ${d.run.map(title).join(", ") || "nobody"}${skipped.length ? `. Not needed: ${skipped.join(", ")}` : ""}` };
     }
     case "candidates":
-      return { at, kind: "finding", text: `${plural(d.candidates.length, "venue candidate")} found, each with a source link` };
+      return { at, kind: "finding", text: `Found ${plural(d.candidates.length, "venue option")}, each with a link to its page` };
     case "scenarios": {
       const best = d.scored.find((s: any) => s.rank === 1);
-      return { at, kind: "finding", text: `${plural(d.scored.length, "scenario")} scored by code${best ? `; best: ${best.id} ${best.title}` : ""}` };
+      return { at, kind: "finding", text: `${plural(d.scored.length, "option")} ranked${best ? `; best: ${best.title}` : ""}` };
     }
-    case "cost":
-      return { at, kind: "cost", text: `${title(d.agent)} cost ${Number(d.cost).toFixed(4)}` };
+    case "cost":   // costs live in "Behind the scenes", not in the organizer's feed
+      return null;
     case "outbox":
-      return { at, kind: "draft", text: `${plural(d.outbox.length, "draft")} ready for review` };
+      return { at, kind: "draft", text: `${plural(d.outbox.length, "message")} ready for your review` };
     case "questions":
       return { at, kind: "finding", text: "The Impact Analyst asked a question instead of guessing" };
     case "error":
@@ -89,15 +89,14 @@ function feedLine(type: string, d: Record<string, any>): FeedItem | null {
 export function summaryFeed(e: Entry): FeedItem[] {
   const out: FeedItem[] = [];
   const push = (kind: FeedItem["kind"], text: string) => out.push({ at: null, kind, text });
-  if (e.impact) push("finding", `${e.impact.waves.flat().length} items affected in ${e.impact.waves.length} waves`);
+  if (e.impact) push("finding", `The problem touches ${plural(e.impact.waves.flat().length, "part")} of the event`);
   if (e.routing) {
     const skipped = Object.keys(e.routing.skipped).map(title);
-    push("skip", `Woke ${e.routing.run.map(title).join(", ")}${skipped.length ? `; ${skipped.join(", ")} stayed asleep` : ""}`);
+    push("skip", `Called in: ${e.routing.run.map(title).join(", ")}${skipped.length ? `. Not needed: ${skipped.join(", ")}` : ""}`);
   }
-  if (e.candidates?.length) push("finding", `${e.candidates.length} venue candidates found`);
-  if (e.scored?.length) push("finding", `${e.scored.length} scenarios scored by code`);
-  for (const [a, c] of Object.entries(e.costs ?? {})) push("cost", `${title(a)} cost ${Number(c).toFixed(4)}`);
-  if (e.outbox?.length) push("draft", `${e.outbox.length} drafts ready for review`);
+  if (e.candidates?.length) push("finding", `Found ${plural(e.candidates.length, "venue option")}`);
+  if (e.scored?.length) push("finding", `${plural(e.scored.length, "option")} ranked`);
+  if (e.outbox?.length) push("draft", `${plural(e.outbox.length, "message")} ready for your review`);
   return out.reverse();
 }
 

@@ -53,6 +53,9 @@ export interface Candidate {
   est_cost_eur?: number | null;
   fit_notes?: string;
   availability: string;
+  address?: string | null;
+  lat?: number | null;
+  lon?: number | null;
 }
 
 export interface Scenario {
@@ -155,4 +158,21 @@ export interface View extends Partial<Entry> {
   id: string;
   text: string;
   agents: Record<AgentName, AgentView>;
+}
+
+export interface VenuePin {
+  name: string;
+  url: string;
+  address?: string | null;
+  area?: string | null;
+  capacity?: number | null;
+  lat: number | null;
+  lon: number | null;
+  located?: string | null;
+}
+
+export interface Venues {
+  disruption: string | null;
+  lost: { name: string; address?: string | null; lat: number | null; lon: number | null; note: string | null } | null;
+  candidates: VenuePin[];
 }

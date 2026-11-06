@@ -22,7 +22,7 @@ code { background: var(--bg); border-radius: 6px; padding: 1px 6px; font-size: 1
 /* ---- shell ---- */
 .shell { display: grid; grid-template-columns: 236px minmax(0, 1fr); min-height: 100vh; }
 .side-col { background: #fff; border-right: 1px solid var(--line); }
-.sidebar { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; padding: 22px 14px; gap: 22px; }
+.sidebar { position: fixed; top: 0; left: 0; width: 236px; height: 100vh; overflow-y: auto; display: flex; flex-direction: column; padding: 22px 14px; gap: 22px; }
 .side-brand { display: flex; align-items: center; gap: 10px; padding: 0 10px; font-size: 21px; font-weight: 800; letter-spacing: -0.3px; }
 .side-links { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .side-link { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; color: var(--muted); text-decoration: none; font-weight: 600; transition: background 0.15s, color 0.15s; }
@@ -282,3 +282,48 @@ textarea:focus { outline: none; border-color: var(--raspberry); }
   .fade, .step-dot, .agent-row, .agent-ic { transition: none; }
   .spin, .live-dot, .feed-item, .dialog[open] { animation: none; }
 }
+
+/* ---- client-friendly summary ---- */
+.ws-bar { flex-direction: column; align-items: stretch; }
+.summary { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 2fr); gap: 14px; }
+.kpi { display: flex; gap: 12px; align-items: flex-start; background: var(--bg); border-radius: 14px; padding: 14px 16px; min-width: 0; }
+.kpi-ic { flex: none; width: 36px; height: 36px; border-radius: 10px; background: #fff; color: var(--coral-dark); display: inline-flex; align-items: center; justify-content: center; }
+.kpi-ic.ok { color: var(--teal-dark); }
+.kpi-label { font-size: 12px; color: var(--muted); font-weight: 700; }
+.kpi-value { font-size: 26px; font-weight: 800; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; align-items: center; }
+.tag { background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; font-size: 12.5px; font-weight: 600; }
+@media (max-width: 1180px) { .summary { grid-template-columns: 1fr 1fr; } .kpi-wide { grid-column: span 2; } }
+.agent-sub { font-weight: 500; color: var(--muted); font-size: 12.5px; }
+.col { display: flex; flex-direction: column; gap: 20px; }
+.span-all { grid-column: 1 / -1; }
+
+/* ---- behind the scenes ---- */
+.behind { padding: 0; gap: 0; }
+.behind summary { list-style: none; display: flex; justify-content: space-between; align-items: center; padding: 18px 22px; cursor: pointer; border-radius: var(--radius); }
+.behind summary::-webkit-details-marker { display: none; }
+.behind summary:hover { background: var(--bg); }
+.behind .chev { color: var(--muted); transition: transform 0.2s; }
+.behind[open] .chev { transform: rotate(180deg); }
+.behind-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 24px; padding: 4px 22px 22px; }
+.behind .meta { align-items: center; }
+.skips { margin: 6px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+@media (max-width: 1180px) { .behind-grid { grid-template-columns: 1fr; } }
+
+/* ---- venue map ---- */
+.venue-map { height: 300px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); }
+.venue-map .leaflet-container { font-family: var(--font); }
+.pin { width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: 13px; border: 2px solid #fff; box-shadow: 0 2px 6px rgba(43, 34, 51, 0.3); flex: none; }
+.pin-candidate { background: var(--coral); color: var(--ink); }
+.pin-chosen { background: var(--teal-dark); color: #fff; }
+.pin-lost { background: var(--raspberry); color: #fff; }
+.pin-off { opacity: 0.45; box-shadow: none; }
+.venue-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.venue-list li { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; }
+.venue-list li.picked { border-color: var(--teal); background: #F5FBF9; }
+.venue-main { flex: 1; min-width: 0; }
+.venue-name { font-weight: 700; }
+.venue .btn-sm { min-height: 30px; }
+
+.tag-replay { margin-left: 8px; background: var(--cream); border-color: var(--cream); }
+@media (max-width: 1100px) { .sidebar { width: 76px; } }

@@ -10,7 +10,7 @@ import { api } from "../api";
 import { useRipple } from "../store";
 import type { FeedItem } from "../store";
 import type { AgentName, AgentView, Candidate, Message, Scenario, Scored, View } from "../types";
-import { AGENTS, labelOf, sizeOf } from "../view";
+import { AGENT_SUBTITLE, AGENTS, labelOf, plainStep, sizeOf } from "../view";
 import { CardHead, Donut, duration } from "./ui";
 
 const AGENT_ICON: Record<AgentName, ReactNode> = {
@@ -56,8 +56,8 @@ export function AgentsCard({ view }: { view?: View }) {
             <li key={name} className={`agent-row ${a.status}`}>
               <span className="agent-ic">{AGENT_ICON[name]}</span>
               <div className="agent-main">
-                <div className="agent-name">{title}</div>
-                <div className="agent-desc" aria-live={a.status === "working" ? "polite" : undefined}>{a.detail || "—"}</div>
+                <div className="agent-name">{title} <span className="agent-sub">— {AGENT_SUBTITLE[name].toLowerCase()}</span></div>
+                <div className="agent-desc" aria-live={a.status === "working" ? "polite" : undefined}>{plainStep(a.detail) || "—"}</div>
               </div>
               <div className="agent-side">
                 <StatusChip a={a} />
@@ -85,7 +85,7 @@ const FEED_ICON: Record<FeedItem["kind"], ReactNode> = {
 export function LiveFeed({ items }: { items: FeedItem[] }) {
   return (
     <section className="card feed-card">
-      <CardHead icon={<Activity size={18} />} title="Live updates" sub="Newest first, straight from the agent stream" />
+      <CardHead icon={<Activity size={18} />} title="Live updates" sub="What Ripple found, newest first" />
       {items.length === 0 ? (
         <p className="empty">Updates appear here as soon as you report a problem.</p>
       ) : (
@@ -164,7 +164,7 @@ export function PlanCard({ view, onNewProblem }: { view: View; onNewProblem: () 
         <CardHead icon={<CalendarClock size={18} />} title="Proposed plan" />
         <p className="empty">
           {view.routing
-            ? why ? `No new plan needed: ${why}. The Coordinator informs the people concerned directly.` : "The Replanner is working on scenarios…"
+            ? why ? `No new plan needed: ${why}. The Coordinator informs the people concerned directly.` : "The Replanner is preparing options…"
             : "Report a problem to get a plan."}
         </p>
       </section>
@@ -182,18 +182,18 @@ export function PlanCard({ view, onNewProblem }: { view: View; onNewProblem: () 
   return (
     <section className="card">
       <CardHead icon={<CalendarClock size={18} />} title="Proposed plan"
-        sub="Agents propose, code ranks: hard limits first, then the group that loses most"
+        sub="Agents propose options; Ripple ranks them: hard limits first, then the group that loses most"
         right={chosen ? <span className="badge badge-ok"><CheckCircle2 size={13} />Plan approved</span>
           : top.tied ? <span className="badge badge-coral">#{top.rank} tied</span>
           : top.feasible ? <span className="badge badge-ok">Best score</span> : <span className="badge badge-grey">No feasible plan</span>} />
 
       <div className="plan-top">
-        <div className="eyebrow">Scenario {top.id}</div>
+        <div className="eyebrow">Option {top.id}</div>
         <h3 className="plan-title">{top.title}</h3>
         {venue?.cand ? (
           <div className="venue">
             <span>{venue.name}{venue.cand.capacity ? ` · ${venue.cand.capacity} people` : ""}</span>
-            <a href={venue.cand.url} target="_blank" rel="noreferrer">Source <ExternalLink size={13} /></a>
+            <a className="btn btn-secondary btn-sm" href={venue.cand.url} target="_blank" rel="noreferrer">View venue<ExternalLink size={13} /></a>
             <span className="badge badge-coral small">availability to confirm</span>
           </div>
         ) : venue ? <div className="venue"><span className="sub">Change:</span><span>{venue.name}</span></div> : null}
@@ -227,7 +227,7 @@ export function PlanCard({ view, onNewProblem }: { view: View; onNewProblem: () 
       {asking && (
         <div className="request">
           <button type="button" className="btn btn-ghost" onClick={() => { setAsking(false); othersRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); othersRef.current?.focus(); }}>
-            Choose another scenario
+            Choose another option
           </button>
           <button type="button" className="btn btn-ghost" onClick={() => { setAsking(false); onNewProblem(); }}>Report a new problem</button>
         </div>
@@ -235,7 +235,7 @@ export function PlanCard({ view, onNewProblem }: { view: View; onNewProblem: () 
 
       {others.length > 0 && (
         <div className="others" ref={othersRef} tabIndex={-1}>
-          <div className="eyebrow">Other scenarios</div>
+          <div className="eyebrow">Other options</div>
           {others.map((s) => (
             <div key={s.id} className={`other ${s.feasible ? "" : "infeasible"}`}>
               <div className="other-main">
@@ -271,11 +271,11 @@ export function OutboxCard({ view, compact = false }: { view: View; compact?: bo
   return (
     <section className="card">
       <CardHead icon={<Inbox size={18} />} title="Outbox"
-        sub={compact ? view.text : view.chosen ? `Drafts for scenario ${view.chosen}` : "One draft per affected group"}
+        sub={compact ? view.text : view.chosen ? `Drafts for option ${view.chosen}` : "One draft per affected group"}
         right={msgs.length ? <Donut done={approved} total={msgs.length} size={56} /> : null} />
       {msgs.length === 0 ? (
         <p className="empty">{view.coordinator === "waiting_for_choice"
-          ? "Approve a plan and the Coordinator drafts a message for every affected group."
+          ? "Approve an option and the Coordinator writes a message for every affected group."
           : "No messages yet."}</p>
       ) : (
         <ul className="msg-list">

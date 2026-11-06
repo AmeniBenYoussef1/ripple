@@ -345,7 +345,9 @@ def finder_message(model: EventModel, finder_nodes: list[str], effects: dict, de
     return (
         'Find replacements. Reply with {"candidates": [...]} (3 to 5) as in the ripple-contracts skill. '
         'Search the web; every candidate needs its source url; availability is always "to confirm". '
-        "Prefer places that fit min_capacity and are in or near the area.\n"
+        "Prefer places that fit min_capacity and are in or near the area. "
+        'Add "address" (the street address exactly as the source page gives it) and "lat"/"lon" '
+        "only if the page states them; otherwise null. Never guess an address.\n"
         f"Problem: {detail}\n{dumps(needs)}"
     )
 

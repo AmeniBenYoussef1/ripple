@@ -25,6 +25,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from .agents import AgentOutputError
+from .geo import Geocoder, venue_pins
 from .orchestrator import (EVENTS, FIXTURES, GENERATED_MODEL, Event, OrchestratorError, Runner,
                            approve_messages, choose_scenario, demo_mode, handle_disruption,
                            load_event, new_event, total_cost)
@@ -97,7 +98,8 @@ def sse(msg: dict[str, Any]) -> str:
 
 
 def create_app(events_dir: Path = EVENTS, fixtures_dir: Path = FIXTURES, model_path: Path = GENERATED_MODEL,
-               demo: Optional[bool] = None, replay_delay: Optional[tuple[float, float]] = None) -> FastAPI:
+               demo: Optional[bool] = None, replay_delay: Optional[tuple[float, float]] = None,
+               geocoder: Optional[Geocoder] = None) -> FastAPI:
     demo = demo_mode() if demo is None else demo
     replay_delay = replay_delay_from_env() if replay_delay is None else replay_delay
 
@@ -116,6 +118,7 @@ def create_app(events_dir: Path = EVENTS, fixtures_dir: Path = FIXTURES, model_p
     app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"],
                        allow_methods=["*"], allow_headers=["*"])
     broker = Broker()
+    geo = geocoder or Geocoder()
     locks: dict[str, asyncio.Lock] = {}
     app.state.broker = broker
 
@@ -209,6 +212,17 @@ def create_app(events_dir: Path = EVENTS, fixtures_dir: Path = FIXTURES, model_p
             raise HTTPException(400, str(err)) from err
         broker.publish(event_id, "approved", {"ids": [m["id"] for m in approved]})
         return {"approved": approved}
+
+    @app.get("/api/events/{event_id}/venues")
+    async def venues(event_id: str, disruption: Optional[str] = None) -> dict[str, Any]:
+        """Map pins for the lost venue and the Finder's candidates (only real addresses are located)."""
+        event = get_event(event_id)
+        history = event.data["history"]
+        entry = (next((h for h in history if h["id"] == disruption), None) if disruption
+                 else next((h for h in reversed(history) if h.get("candidates")), None))
+        if entry is None:
+            return {"disruption": disruption, "lost": None, "candidates": []}
+        return await venue_pins(entry, event.data["model"]["nodes"], geo)
 
     @app.get("/api/events/{event_id}/files/{name}")
     async def download(event_id: str, name: str) -> FileResponse:

@@ -42,8 +42,8 @@ export function statusText(v: View, busy: boolean): { text: string; tone: "alert
   const p = phaseOf(v, busy);
   if (v.status === "questions") return { text: "Needs your answer", tone: "warn" };
   if (busy) return { text: p === "analysis" ? "Analysing" : "Agents working", tone: "alert" };
-  if (v.coordinator === "waiting_for_choice") return { text: "Waiting for your choice", tone: "warn" };
-  if (p === "review") return { text: "Drafts to review", tone: "warn" };
+  if (v.coordinator === "waiting_for_choice") return { text: "Pick an option", tone: "warn" };
+  if (p === "review") return { text: "Messages to review", tone: "warn" };
   return { text: "Handled", tone: "ok" };
 }
 
