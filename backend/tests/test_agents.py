@@ -160,3 +160,15 @@ def test_call_agent_missing_agent_id(monkeypatch):
     monkeypatch.delenv("COMINTY_AGENT_IMPACT")
     with pytest.raises(RuntimeError, match="COMINTY_AGENT_IMPACT"):
         run(call_agent(fake_client(), "impact", "hi", DisruptionReply))
+
+
+def test_call_agent_check_failure_triggers_retry():
+    def node_exists(parsed):
+        if parsed.disruption.node != "workshop_s2":
+            raise ValueError(f"unknown node {parsed.disruption.node!r}")
+
+    wrong = '{"disruption": {"node": "workshop_2", "kind": "delayed"}}'
+    client = fake_client(FakeRun(wrong), FakeRun(GOOD_DISRUPTION))
+    res = run(call_agent(client, "impact", "hi", DisruptionReply, check=node_exists))
+    assert res.data.disruption.node == "workshop_s2"
+    assert "unknown node 'workshop_2'" in client.chat.sent[1][1]

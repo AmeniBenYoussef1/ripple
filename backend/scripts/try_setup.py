@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 BACKEND = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND))
 load_dotenv(BACKEND / ".env")
+sys.stdout.reconfigure(encoding="utf-8")  # accents in venue names on the Windows console
 
 from cominty_sdk import AsyncCominty, ComintyError  # noqa: E402
 

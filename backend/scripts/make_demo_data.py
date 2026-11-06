@@ -105,7 +105,7 @@ def write_budget() -> None:
         {"item": "Prizes", "eur": 900},
         {"item": "Online judge licence", "eur": 200},
     ]
-    total = 7500
+    total = 12000
     spent = sum(l["eur"] for l in lines)
     budget = {"currency": "EUR", "total_eur": total, "committed": lines,
               "committed_eur": spent, "remaining_eur": total - spent}

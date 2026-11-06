@@ -165,8 +165,13 @@ async def call_agent(
     thread_id: Optional[str] = None,
     thread_name: Optional[str] = None,
     max_steps: int = 8,
+    check: Optional[Callable[[Any], None]] = None,
 ) -> AgentResult:
-    """Send `message` to one agent and return its validated reply (or its questions)."""
+    """Send `message` to one agent and return its validated reply (or its questions).
+
+    `check(parsed)` is an optional extra rule (e.g. "the node id exists in the model");
+    it raises ValueError to trigger the same single retry as invalid JSON.
+    """
     aid = agent_id(agent)
     if thread_id is None:
         run = await client.chat.start(agent_id=aid, message=message, name=thread_name,
@@ -184,8 +189,14 @@ async def call_agent(
         result.questions = [Question(prompt=q.prompt, options=list(q.options)) for q in reply.questions]
         return result
 
+    def parse_and_check(text: str):
+        parsed = parse_reply(text, shape)
+        if check is not None and not isinstance(parsed, list):
+            check(parsed)
+        return parsed
+
     try:
-        parsed = parse_reply(reply.content, shape)
+        parsed = parse_and_check(reply.content)
     except (ValueError, ValidationError) as err:
         # One retry in the same thread, telling the agent exactly what was wrong.
         retry_msg = (
@@ -198,7 +209,7 @@ async def call_agent(
         result.raw = reply.content
         result.files = list(reply.files) or result.files
         try:
-            parsed = parse_reply(reply.content, shape)
+            parsed = parse_and_check(reply.content)
         except (ValueError, ValidationError) as err2:
             raise AgentOutputError(
                 f"{agent} agent returned invalid JSON twice: {short_error(err2, 400)}") from err2

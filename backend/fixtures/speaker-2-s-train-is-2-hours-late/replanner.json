@@ -1,0 +1,188 @@
+{
+  "agent": "replanner",
+  "recorded_at": "2026-11-06T18:27:50+00:00",
+  "thread_id": "9b4f5685-533c-4b30-864a-c80aef2155e9",
+  "cost": "0.002487775",
+  "message": "Propose 2 or 3 scenarios. Reply with {\"scenarios\": [...]} as in the ripple-contracts skill.\n- ids \"A\", \"B\", \"C\". \"changes\" reference node ids from \"affected\" ({\"node\", \"set\"} or {\"node\", \"replace_with\"}).\n- burdens: one entry per affected group, \"group\" = the group id, \"people\" = its size, \"minutes\" = your estimate of time lost per person.\n- \"capacity\" = capacity of the venue used in that scenario (null if unknown), \"attendees\" = the attendees group size.\n- \"extra_cost_eur\": null when unknown. List every unverified fact in \"to_confirm\". Do not rank.\n- \"accessibility_ok\" and \"within_opening_hours\" mean \"not known to fail\": set them to false ONLY when a source says the scenario fails that requirement. If unknown, keep true and add it to \"to_confirm\".\n{\"disruption\":{\"node\":\"workshop_s2\",\"kind\":\"delayed\",\"detail\":\"Speaker 2's train is 2 hours late; the Workshop by Speaker 2 (10:00-11:00, room B) is delayed by 120 minutes.\",\"params\":{\"delay_minutes\":120}},\"affected\":[{\"id\":\"grp_speaker_2\",\"type\":\"group\",\"label\":\"Speaker 2\",\"attrs\":{\"size\":1,\"session\":\"Workshop 10:00-11:00, room B\"},\"source\":\"people.csv\",\"effect\":\"inform\"},{\"id\":\"grp_workshop_participants\",\"type\":\"group\",\"label\":\"Workshop participants\",\"attrs\":{\"size\":40},\"source\":\"participants.csv\",\"effect\":\"inform\"},{\"id\":\"venue_main_hall\",\"type\":\"resource\",\"label\":\"Main hall\",\"attrs\":{\"capacity\":250,\"address\":\"[FICTIONAL ADDRESS]\",\"date\":\"2026-11-21\",\"replaced_by\":\"Espace Mont Louis (11e)\"},\"source\":\"schedule.json\",\"effect\":\"context\"},{\"id\":\"workshop_s2\",\"type\":\"schedule_item\",\"label\":\"Workshop by Speaker 2\",\"attrs\":{\"start\":\"10:00\",\"end\":\"11:00\",\"location\":\"Espace Mont Louis (11e), room B\"},\"source\":\"schedule.json\",\"effect\":\"moved\"}],\"groups\":[{\"id\":\"grp_attendees\",\"label\":\"Attendees\",\"size\":200},{\"id\":\"grp_speakers\",\"label\":\"Speakers\",\"size\":3},{\"id\":\"grp_speaker_1\",\"label\":\"Speaker 1\",\"size\":1},{\"id\":\"grp_speaker_2\",\"label\":\"Speaker 2\",\"size\":1},{\"id\":\"grp_speaker_3\",\"label\":\"Speaker 3\",\"size\":1},{\"id\":\"grp_workshop_participants\",\"label\":\"Workshop participants\",\"size\":40},{\"id\":\"grp_volunteers\",\"label\":\"Volunteers\",\"size\":12},{\"id\":\"grp_caterer\",\"label\":\"Green Fork Catering\",\"size\":1}],\"candidates\":[],\"remaining_budget_eur\":6000.0}",
+  "raw": "Now I have the contract. Building the scenarios from the given data only.\n\nKey facts: the disruption delays the Workshop by Speaker 2 by 120 minutes (10:00–11:00 becomes 12:00–13:00 in room B at Espace Mont Louis). The only venue in the message is Espace Mont Louis (11e), with no capacity given, so it is `null`. Three alternatives are possible, but I have no data on their availability or capacity, so the scenarios stay within the known facts: keep the speaker's session at the new time, or move/shorten it. Burden estimates are labelled as estimates by the contract's design.\n\n```json\n{\"scenarios\": [\n  {\"id\": \"A\", \"title\": \"Run workshop 2 hours late in room B at Espace Mont Louis\",\n   \"changes\": [{\"node\": \"workshop_s2\", \"set\": {\"start\": \"12:00\", \"end\": \"13:00\", \"location\": \"Espace Mont Louis (11e), room B\"}}],\n   \"capacity\": null, \"attendees\": 200, \"extra_cost_eur\": null,\n   \"accessibility_ok\": true, \"within_opening_hours\": true,\n   \"burdens\": [\n     {\"group\": \"grp_speaker_2\", \"people\": 1, \"minutes\": 120, \"must_replan\": false},\n     {\"group\": \"grp_workshop_participants\", \"people\": 40, \"minutes\": 120, \"must_replan\": false},\n     {\"group\": \"grp_attendees\", \"people\": 200, \"minutes\": 0, \"must_replan\": false},\n     {\"group\": \"grp_volunteers\", \"people\": 12, \"minutes\": 60, \"must_replan\": false},\n     {\"group\": \"grp_speakers\", \"people\": 3, \"minutes\": 0, \"must_replan\": false}\n   ],\n   \"to_confirm\": [\"Room B capacity at Espace Mont Louis (not stated in the sources)\", \"Room B availability from 12:00 to 13:00 on 2026-11-21\", \"Whether Speaker 2 can attend at 12:00 after the train delay\", \"Whether Workshop participants can attend 12:00-13:00 and whether the rest of the day's schedule is affected\", \"Volunteer staffing for the shifted session (estimate of 60 minutes is an estimate, not sourced)\", \"Whether room B at Espace Mont Louis meets accessibility needs (not checked)\"]},\n\n  {\"id\": \"B\", \"title\": \"Shift workshop 2 to 12:00-13:00 in room B and inform participants of the change\",\n   \"changes\": [{\"node\": \"workshop_s2\", \"set\": {\"start\": \"12:00\", \"end\": \"13:00\"}}],\n   \"capacity\": null, \"attendees\": 200, \"extra_cost_eur\": null,\n   \"accessibility_ok\": true, \"within_opening_hours\": true,\n   \"burdens\": [\n     {\"group\": \"grp_speaker_2\", \"people\": 1, \"minutes\": 120, \"must_replan\": false},\n     {\"group\": \"grp_workshop_participants\", \"people\": 40, \"minutes\": 90, \"must_replan\": false},\n     {\"group\": \"grp_attendees\", \"people\": 200, \"minutes\": 0, \"must_replan\": false},\n     {\"group\": \"grp_volunteers\", \"people\": 12, \"minutes\": 30, \"must_replan\": false},\n     {\"group\": \"grp_speakers\", \"people\": 3, \"minutes\": 0, \"must_replan\": false}\n   ],\n   \"to_confirm\": [\"Room B availability at Espace Mont Louis from 12:00 to 13:00 on 2026-11-21\", \"Room B capacity versus 40 workshop participants (capacity not stated)\", \"Whether participants can rearrange their day for a 12:00 start (time lost is an unsourced estimate)\", \"Whether the lunch schedule is affected by a 12:00-13:00 workshop\", \"Volunteer time needed to relocate and reset the room (estimate, not sourced)\"]},\n\n  {\"id\": \"C\", \"title\": \"Keep original slot for the first hour and push the workshop to 12:00-13:00 with a shortened session\",\n   \"changes\": [{\"node\": \"workshop_s2\", \"set\": {\"start\": \"12:00\", \"end\": \"12:45\", \"location\": \"Espace Mont Louis (11e), room B\"}}],\n   \"capacity\": null, \"attendees\": 200, \"extra_cost_eur\": null,\n   \"accessibility_ok\": true, \"within_opening_hours\": true,\n   \"burdens\": [\n     {\"group\": \"grp_speaker_2\", \"people\": 1, \"minutes\": 120, \"must_replan\": false},\n     {\"group\": \"grp_workshop_participants\", \"people\": 40, \"minutes\": 105, \"must_replan\": false},\n     {\"group\": \"grp_attendees\", \"people\": 200, \"minutes\": 0, \"must_replan\": false},\n     {\"group\": \"grp_volunteers\", \"people\": 12, \"minutes\": 45, \"must_replan\": false},\n     {\"group\": \"grp_speakers\", \"people\": 3, \"minutes\": 0, \"must_replan\": false}\n   ],\n   \"to_confirm\": [\"Whether Speaker 2 agrees to a 45-minute session instead of 60 minutes\", \"Room B capacity and availability from 12:00 to 12:45 at Espace Mont Louis\", \"Whether a shortened session changes the workshop content or agreement with the organizer\", \"Time lost by participants is an unsourced estimate\", \"Whether the room is accessible (not checked)\"]}\n]}\n```",
+  "data": {
+    "scenarios": [
+      {
+        "id": "A",
+        "title": "Run workshop 2 hours late in room B at Espace Mont Louis",
+        "changes": [
+          {
+            "node": "workshop_s2",
+            "set": {
+              "start": "12:00",
+              "end": "13:00",
+              "location": "Espace Mont Louis (11e), room B"
+            }
+          }
+        ],
+        "capacity": null,
+        "attendees": 200,
+        "extra_cost_eur": null,
+        "accessibility_ok": true,
+        "within_opening_hours": true,
+        "burdens": [
+          {
+            "group": "grp_speaker_2",
+            "people": 1,
+            "minutes": 120,
+            "must_replan": false
+          },
+          {
+            "group": "grp_workshop_participants",
+            "people": 40,
+            "minutes": 120,
+            "must_replan": false
+          },
+          {
+            "group": "grp_attendees",
+            "people": 200,
+            "minutes": 0,
+            "must_replan": false
+          },
+          {
+            "group": "grp_volunteers",
+            "people": 12,
+            "minutes": 60,
+            "must_replan": false
+          },
+          {
+            "group": "grp_speakers",
+            "people": 3,
+            "minutes": 0,
+            "must_replan": false
+          }
+        ],
+        "to_confirm": [
+          "Room B capacity at Espace Mont Louis (not stated in the sources)",
+          "Room B availability from 12:00 to 13:00 on 2026-11-21",
+          "Whether Speaker 2 can attend at 12:00 after the train delay",
+          "Whether Workshop participants can attend 12:00-13:00 and whether the rest of the day's schedule is affected",
+          "Volunteer staffing for the shifted session (estimate of 60 minutes is an estimate, not sourced)",
+          "Whether room B at Espace Mont Louis meets accessibility needs (not checked)"
+        ]
+      },
+      {
+        "id": "B",
+        "title": "Shift workshop 2 to 12:00-13:00 in room B and inform participants of the change",
+        "changes": [
+          {
+            "node": "workshop_s2",
+            "set": {
+              "start": "12:00",
+              "end": "13:00"
+            }
+          }
+        ],
+        "capacity": null,
+        "attendees": 200,
+        "extra_cost_eur": null,
+        "accessibility_ok": true,
+        "within_opening_hours": true,
+        "burdens": [
+          {
+            "group": "grp_speaker_2",
+            "people": 1,
+            "minutes": 120,
+            "must_replan": false
+          },
+          {
+            "group": "grp_workshop_participants",
+            "people": 40,
+            "minutes": 90,
+            "must_replan": false
+          },
+          {
+            "group": "grp_attendees",
+            "people": 200,
+            "minutes": 0,
+            "must_replan": false
+          },
+          {
+            "group": "grp_volunteers",
+            "people": 12,
+            "minutes": 30,
+            "must_replan": false
+          },
+          {
+            "group": "grp_speakers",
+            "people": 3,
+            "minutes": 0,
+            "must_replan": false
+          }
+        ],
+        "to_confirm": [
+          "Room B availability at Espace Mont Louis from 12:00 to 13:00 on 2026-11-21",
+          "Room B capacity versus 40 workshop participants (capacity not stated)",
+          "Whether participants can rearrange their day for a 12:00 start (time lost is an unsourced estimate)",
+          "Whether the lunch schedule is affected by a 12:00-13:00 workshop",
+          "Volunteer time needed to relocate and reset the room (estimate, not sourced)"
+        ]
+      },
+      {
+        "id": "C",
+        "title": "Keep original slot for the first hour and push the workshop to 12:00-13:00 with a shortened session",
+        "changes": [
+          {
+            "node": "workshop_s2",
+            "set": {
+              "start": "12:00",
+              "end": "12:45",
+              "location": "Espace Mont Louis (11e), room B"
+            }
+          }
+        ],
+        "capacity": null,
+        "attendees": 200,
+        "extra_cost_eur": null,
+        "accessibility_ok": true,
+        "within_opening_hours": true,
+        "burdens": [
+          {
+            "group": "grp_speaker_2",
+            "people": 1,
+            "minutes": 120,
+            "must_replan": false
+          },
+          {
+            "group": "grp_workshop_participants",
+            "people": 40,
+            "minutes": 105,
+            "must_replan": false
+          },
+          {
+            "group": "grp_attendees",
+            "people": 200,
+            "minutes": 0,
+            "must_replan": false
+          },
+          {
+            "group": "grp_volunteers",
+            "people": 12,
+            "minutes": 45,
+            "must_replan": false
+          },
+          {
+            "group": "grp_speakers",
+            "people": 3,
+            "minutes": 0,
+            "must_replan": false
+          }
+        ],
+        "to_confirm": [
+          "Whether Speaker 2 agrees to a 45-minute session instead of 60 minutes",
+          "Room B capacity and availability from 12:00 to 12:45 at Espace Mont Louis",
+          "Whether a shortened session changes the workshop content or agreement with the organizer",
+          "Time lost by participants is an unsourced estimate",
+          "Whether the room is accessible (not checked)"
+        ]
+      }
+    ]
+  },
+  "questions": [],
+  "files": []
+}

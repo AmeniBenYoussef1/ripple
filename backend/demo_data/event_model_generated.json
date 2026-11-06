@@ -217,9 +217,9 @@
       "type": "constraint",
       "label": "Budget",
       "attrs": {
-        "total_eur": 7500,
+        "total_eur": 12000,
         "committed_eur": 6000,
-        "remaining_eur": 1500,
+        "remaining_eur": 6000,
         "currency": "EUR"
       },
       "source": "budget.json"

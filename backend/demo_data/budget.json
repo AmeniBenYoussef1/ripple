@@ -1,6 +1,6 @@
 {
   "currency": "EUR",
-  "total_eur": 7500,
+  "total_eur": 12000,
   "committed": [
     {
       "item": "Main hall rental",
@@ -24,5 +24,5 @@
     }
   ],
   "committed_eur": 6000,
-  "remaining_eur": 1500
+  "remaining_eur": 6000
 }
