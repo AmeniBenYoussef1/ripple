@@ -31,6 +31,7 @@ class ScoredScenario:
     unconfirmed: int
     rank: int | None = None
     explanation: list[str] = field(default_factory=list)
+    tied_with: list[str] = field(default_factory=list)  # ids with exactly the same score key
 
     def key(self) -> tuple:
         cost = self.extra_cost if self.extra_cost is not None else math.inf
@@ -43,6 +44,7 @@ class ScoredScenario:
             "worst_burden_min": self.worst_burden, "total_burden_person_min": self.total_burden,
             "extra_cost_eur": self.extra_cost, "unconfirmed": self.unconfirmed,
             "rank": self.rank, "explanation": self.explanation,
+            "tied": bool(self.tied_with), "tied_with": self.tied_with,
         }
 
 
@@ -81,13 +83,18 @@ def score(scenarios: list[Scenario], remaining_budget: float | None = None) -> l
 
     feasible = sorted((x for x in scored if x.feasible), key=lambda x: x.key())
     for i, x in enumerate(feasible, start=1):
-        x.rank = i
+        # identical keys share the best rank (1, 1, 3) and are marked as tied: the organizer decides
+        x.tied_with = [y.scenario.id for y in feasible if y is not x and y.key() == x.key()]
+        first_equal = next(j for j, y in enumerate(feasible, start=1) if y.key() == x.key())
+        x.rank = first_equal
         x.explanation = [
             f"worst impact: {x.worst_group or 'nobody'}, {x.worst_burden} min per person",
             f"total impact: {x.total_burden} person-minutes",
             "extra cost: to quote" if x.extra_cost is None else f"extra cost: EUR {x.extra_cost:g}",
             f"still to confirm: {x.unconfirmed}",
         ]
+        if x.tied_with:
+            x.explanation.append(f"tied with {', '.join(x.tied_with)}: same score on every criterion")
     for x in scored:
         if not x.feasible:
             x.explanation = ["fails a hard limit: " + "; ".join(x.violations)]

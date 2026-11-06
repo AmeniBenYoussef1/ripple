@@ -29,6 +29,9 @@ SCENARIOS_1 = {"scenarios": [
 OUTBOX = {"messages": [
     {"group": "grp_attendees", "to": "200 attendees", "subject": "New venue", "body": "We move to Hall C."},
     {"group": "grp_caterer", "to": "orders@greenfork.example.com", "subject": "New address", "body": "..."},
+], "revised_schedule": [{"id": "lunch", "start": "12:30", "end": "13:30", "place": "Hall C"}]}
+OUTBOX_3 = {"messages": [
+    {"group": "grp_caterer", "to": "orders@greenfork.example.com", "subject": "230 lunch boxes", "body": "..."},
 ]}
 
 FIXTURES = {
@@ -47,6 +50,7 @@ FIXTURES = {
     slugify(T3): {
         "impact_analyst": rec({"disruption": {"node": "grp_attendees", "kind": "resized",
                                               "params": {"new_size": 230}}}, "0.01"),
+        "coordinator": rec(OUTBOX_3, "0.02"),
     },
 }
 
@@ -58,7 +62,11 @@ def setup(tmp_path):
         (fx / slug).mkdir(parents=True)
         for agent, data in agents.items():
             (fx / slug / f"{agent}.json").write_text(json.dumps(data))
-    event = new_event("test", model_path=REFERENCE, events_dir=tmp_path / "events")
+    model = json.loads(REFERENCE.read_text())
+    model["nodes"][0]["attrs"]["date"] = "2026-11-21"           # the reference model has no date
+    model_path = tmp_path / "model.json"
+    model_path.write_text(json.dumps(model))
+    event = new_event("test", model_path=model_path, events_dir=tmp_path / "events")
     events = []
     runner = Runner(demo=True, fixtures_dir=fx, on_event=events.append)
     return event, runner, events, tmp_path
@@ -88,6 +96,11 @@ def test_choose_runs_coordinator_and_updates_model(setup):
     out = run(choose_scenario(event, "B", runner))
     assert [m["group"] for m in out["outbox"]] == ["grp_attendees", "grp_caterer"]
     assert all(m["status"] == "draft" for m in out["outbox"])
+    assert [m["id"] for m in out["outbox"]] == ["d1-the-hall-just-cancelled-m1", "d1-the-hall-just-cancelled-m2"]
+    files = {f["name"]: f for f in out["files"]}
+    assert files["d1-attendee_update.csv"]["rows"] == 200      # only attendees are in participants.csv
+    ics = (event.files_dir / "d1-revised_schedule.ics").read_text()
+    assert "DTSTART:20261121T123000" in ics
     venue = event.model.node("venue_main_hall")
     assert venue.attrs["capacity"] == 250 and venue.attrs["replaced_by"] == "Hall C"
 
@@ -115,6 +128,9 @@ def test_full_demo_sequence_skips_the_right_agents(setup):
     assert set(three["routing"]["skipped"]) == {"resource_finder", "replanner"}
     assert three["impact"]["checked_ok"] == ["venue_main_hall"]
     assert Decimal(three["saved_total"]) == Decimal("0.04") + Decimal("0.02")
+    assert three["coordinator"] == "done"                    # nothing to choose: informed at once
+    assert [m["group"] for m in three["outbox"]] == ["grp_caterer"]
+    assert three["files"] == []                              # no participant group, nothing moves
     assert event.model.node("grp_attendees").attrs["size"] == 230
 
 
@@ -169,8 +185,8 @@ def test_recorded_live_run_replays_the_demo(tmp_path):
     top = next(s for s in one["scored"] if s["feasible"])
     out = run(choose_scenario(event, top["id"], runner))
     assert out["outbox"] and all(m["status"] == "draft" for m in out["outbox"])
-    assert {f["name"] for f in out["files"]} == {"revised_schedule.ics", "attendee_update.csv"}
-    assert all(Path(f["path"]).exists() for f in out["files"])
+    assert {f["name"] for f in out["files"]} == {"d1-revised_schedule.ics", "d1-attendee_update.csv"}
+    assert all((event.files_dir / f["name"]).exists() for f in out["files"])
 
     two = run(handle_disruption(event, T2, runner))
     assert two["disruption"]["node"] == "workshop_s2"
@@ -178,4 +194,39 @@ def test_recorded_live_run_replays_the_demo(tmp_path):
 
     three = run(handle_disruption(event, T3, runner))
     assert three["routing"]["run"] == ["coordinator"]
+    assert three["coordinator"] == "done" and three["outbox"]
     assert three["impact"]["checked_ok"] == [one["disruption"]["node"]]   # the new hall still fits 230
+
+
+def test_choosing_twice_is_refused(setup):
+    event, runner, _, _ = setup
+    run(handle_disruption(event, T1, runner))
+    run(choose_scenario(event, "B", runner))
+    with pytest.raises(OrchestratorError, match="already chosen"):
+        run(choose_scenario(event, "C", runner))
+
+
+def test_approve_marks_drafts_and_rejects_unknown_ids(setup):
+    from app.orchestrator import approve_messages
+    event, runner, _, _ = setup
+    run(handle_disruption(event, T1, runner))
+    out = run(choose_scenario(event, "B", runner))
+    first = out["outbox"][0]["id"]
+    with pytest.raises(OrchestratorError, match="unknown message ids"):
+        approve_messages(event, [first, "nope"])
+    assert all(m["status"] == "draft" for m in event.data["history"][0]["outbox"])   # nothing changed
+    approved = approve_messages(event, [first])
+    assert approved[0]["status"] == "approved"
+    statuses = [m["status"] for m in event.data["history"][0]["outbox"]]
+    assert statuses == ["approved", "draft"]
+
+
+def test_stage_events_follow_the_flow(setup):
+    event, runner, _, _ = setup
+    run(handle_disruption(event, T1, runner))
+    run(choose_scenario(event, "B", runner))                 # bigger hall, so only the Coordinator wakes
+    stages = []
+    runner.on_stage = lambda name, payload: stages.append(name)
+    run(handle_disruption(event, T3, runner))
+    assert stages[:4] == ["started", "cost", "impact", "routing"]
+    assert "outbox" in stages and stages[-1] == "done"

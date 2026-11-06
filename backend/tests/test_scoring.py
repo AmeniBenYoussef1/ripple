@@ -48,3 +48,19 @@ def test_explanation_is_human_readable():
     top = score(demo_scenarios())[0]
     assert top.explanation[0] == "worst impact: attendees, 15 min per person"
     assert top.explanation[2] == "extra cost: to quote"
+
+
+def test_identical_scores_are_marked_tied_and_share_the_rank():
+    same = dict(capacity=250, attendees=200, burdens=[GroupBurden(group="attendees", people=200, minutes=20)],
+                to_confirm=["availability"])
+    a = Scenario(id="A", title="Hall A", **same)
+    b = Scenario(id="B", title="Hall B", **same)
+    c = Scenario(id="C", title="Hall C", capacity=250, attendees=200,
+                 burdens=[GroupBurden(group="attendees", people=200, minutes=30)])
+    ranked = score([a, b, c])
+    by_id = {x.scenario.id: x for x in ranked}
+    assert by_id["A"].rank == by_id["B"].rank == 1 and by_id["C"].rank == 3
+    assert by_id["A"].tied_with == ["B"] and by_id["B"].tied_with == ["A"]
+    assert by_id["C"].to_dict()["tied"] is False
+    assert by_id["A"].to_dict()["tied"] is True
+    assert "tied with B" in by_id["A"].explanation[-1]

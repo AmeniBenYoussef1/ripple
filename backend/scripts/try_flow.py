@@ -1,7 +1,8 @@
 """Run the 3 demo disruptions in order on a fresh event.
 
-Run:  cd backend && .venv/Scripts/python scripts/try_flow.py ["search area"]
+Run:  cd backend && .venv/Scripts/python scripts/try_flow.py ["search area"] [--record-missing]
 Live by default (records fixtures/); with DEMO_MODE=true in .env it replays them for free.
+--record-missing: replay what is recorded and call Cominty only for missing recordings.
 For disruption 1 the top-ranked feasible scenario is chosen and the Coordinator runs.
 """
 import asyncio
@@ -23,7 +24,9 @@ from app.orchestrator import (OrchestratorError, Runner, choose_scenario, demo_m
                               handle_disruption, new_event)
 
 TEXTS = ["The hall just cancelled.", "Speaker 2's train is 2 hours late.", "30 late registrations."]
-AREA = sys.argv[1] if len(sys.argv) > 1 else ""
+ARGS = [a for a in sys.argv[1:] if not a.startswith("--")]
+AREA = ARGS[0] if ARGS else "Paris, France"
+RECORD_MISSING = "--record-missing" in sys.argv
 
 
 def show_event(e: dict) -> None:
@@ -51,6 +54,7 @@ def show_disruption(out: dict) -> None:
         print(f"  candidate: {c['name']} | cap {c.get('capacity')} | {c.get('area')} | {c['url']}")
     for s in out["scored"]:
         tag = f"#{s['rank']}" if s["feasible"] else "infeasible"
+        tag += " tied" if s.get("tied") else ""
         print(f"  scenario {s['id']} [{tag}] {s['title']}")
         for line in s["explanation"]:
             print(f"      {line}")
@@ -58,6 +62,8 @@ def show_disruption(out: dict) -> None:
     if out.get("questions"):
         print("  questions:", [q["prompt"] for q in out["questions"]])
     print(f"  cost: {out['costs']} | saved estimate: {out['saved']} = {out['saved_total']}")
+    if out["coordinator"] == "done":    # ran at once: nothing to choose
+        show_outbox({"chosen": None, "cost": out["costs"].get("coordinator"), **out})
 
 
 def show_outbox(res: dict) -> None:
@@ -66,8 +72,8 @@ def show_outbox(res: dict) -> None:
         print(f"  [{m['status']}] {m['group']} -> {m['to']} ({m['channel']}): {m['subject']}")
     print(f"  revised schedule: {len(res['revised_schedule'])} items | volunteer tasks: {len(res['volunteer_tasks'])}")
     for f in res["files"]:
-        where = f.get("saved") or f.get("download_error") or "not downloaded"
-        print(f"  file: {f['name']} | has url: {f.get('has_url')} | {where} | {f.get('bytes', '?')} bytes")
+        size = f"{f['rows']} people" if "rows" in f else f"{f['items']} items"
+        print(f"  file (built in code): {f['name']} | {size}")
 
 
 async def flow(runner: Runner) -> None:
@@ -94,7 +100,7 @@ async def main() -> None:
         await flow(Runner(demo=True, on_event=show_event))
         return
     async with AsyncCominty() as client:
-        await flow(Runner(client=client, demo=False, on_event=show_event))
+        await flow(Runner(client=client, demo=False, on_event=show_event, prefer_recordings=RECORD_MISSING))
 
 
 if __name__ == "__main__":
