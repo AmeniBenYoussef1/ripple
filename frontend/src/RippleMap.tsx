@@ -1,6 +1,6 @@
 // The ripple map: the disrupted node at the centre, wave i on ring i, untouched nodes grey outside.
 import { useEffect, useMemo, useState } from "react";
-import type { EventModel, Impact } from "./types";
+import type { EventModel, Impact, ModelNode } from "./types";
 
 const W = 1040;
 const H = 640;
@@ -49,14 +49,26 @@ function frameSlots(count: number): { x: number; y: number }[] {
   return count <= rows.length ? rows : [...rows, ...sides];
 }
 
+const timeKey = (n: { attrs: Record<string, unknown> }) => String(n.attrs.start ?? n.attrs.time ?? "99");
+const CALM_COLUMNS: { title: string; types: string[]; sort?: (a: ModelNode, b: ModelNode) => number }[] = [
+  { title: "Places & budget", types: ["resource", "constraint"] },
+  { title: "To prepare", types: ["commitment"], sort: (a, b) => timeKey(a).localeCompare(timeKey(b)) },
+  { title: "Day plan", types: ["schedule_item"], sort: (a, b) => timeKey(a).localeCompare(timeKey(b)) },
+  { title: "People", types: ["group"], sort: (a, b) => Number(b.attrs.size ?? 0) - Number(a.attrs.size ?? 0) },
+];
+
 function layout(model: EventModel, impact: Impact | undefined): Placed[] {
   if (!impact) {
-    // No disruption yet: everything calm, spread on one big ellipse.
-    const n = model.nodes.length;
-    return model.nodes.map((node, k) => {
-      const a = (2 * Math.PI * k) / n - Math.PI / 2;
-      return { id: node.id, x: CX + RING_MAX.rx * Math.cos(a), y: CY + RING_MAX.ry * Math.sin(a), wave: -1 };
+    // Nothing wrong yet: a calm overview in columns, read left to right like the event itself.
+    const placed: Placed[] = [];
+    CALM_COLUMNS.forEach((col, c) => {
+      const ids = model.nodes.filter((n) => col.types.includes(n.type)).sort(col.sort ?? (() => 0));
+      const x = 110 + (c * (W - 220)) / (CALM_COLUMNS.length - 1);
+      const step = Math.min(58, (H - 110) / Math.max(ids.length, 1));
+      const top = 70 + ((H - 90) - step * ids.length) / 2;
+      ids.forEach((n, k) => placed.push({ id: n.id, x, y: top + step * (k + 0.5), wave: -1 }));
     });
+    return placed;
   }
   const placed: Placed[] = [{ id: impact.origin, x: CX, y: CY, wave: 0 }];
   const n = impact.waves.length;
@@ -153,6 +165,11 @@ export function RippleMap({ model, impact, resolved, animateKey }: Props) {
               </g>
             );
           })}
+
+        {/* calm overview: column titles */}
+        {!impact && CALM_COLUMNS.map((col, c) => (
+          <text key={col.title} x={110 + (c * (W - 220)) / (CALM_COLUMNS.length - 1)} y={34} className="col-title">{col.title}</text>
+        ))}
 
         {/* edges */}
         {edges.map((e, k) => {

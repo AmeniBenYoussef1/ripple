@@ -58,6 +58,23 @@ export const api = {
   approve: (ids: string[]) =>
     call<{ approved: Message[] }>(`${ev}/outbox/approve`, { method: "POST", body: JSON.stringify({ ids }) }),
   venues: (disruptionId: string) => call<Venues>(`${ev}/venues?disruption=${encodeURIComponent(disruptionId)}`),
+  /** Multipart upload, so no JSON content-type here. */
+  async analyze(files: File[]): Promise<{ status: string; state: EventState; questions?: { prompt: string; options: string[] }[] }> {
+    const form = new FormData();
+    files.forEach((f) => form.append("files", f, f.name));
+    let res: Response;
+    try {
+      res = await fetch(`${API}${ev}/analyze`, { method: "POST", body: form });
+    } catch {
+      throw new ApiError(`Can't reach the Ripple server at ${API}. Is the backend running?`);
+    }
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new ApiError(friendly(res.status, typeof body.detail === "string" ? body.detail : `${res.status} ${res.statusText}`));
+    return body;
+  },
+  confirmSetup: () => call<EventState>(`${ev}/setup/confirm`, { method: "POST" }),
+  demoFiles: () => call<{ name: string; bytes: number }[]>("/api/demo-files"),
+  demoFileUrl: (name: string) => `${API}/api/demo-files/${encodeURIComponent(name)}`,
   fileUrl: (name: string) => `${API}${ev}/files/${encodeURIComponent(name)}`,
   streamUrl: () => `${API}${ev}/stream`,
 };

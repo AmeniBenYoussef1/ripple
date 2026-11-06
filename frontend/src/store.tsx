@@ -31,6 +31,8 @@ interface Store {
   choose: (scenarioId: string) => Promise<void>;
   approve: (ids: string[]) => Promise<void>;
   reset: () => Promise<void>;
+  analyze: (files: File[]) => Promise<boolean>;
+  confirmSetup: () => Promise<void>;
 }
 
 const Ctx = createContext<Store | null>(null);
@@ -201,6 +203,32 @@ export function RippleProvider({ children }: { children: ReactNode }) {
       await run(() => api.choose(sid), base);
     },
     approve: (ids: string[]) => run(() => api.approve(ids)),
+    analyze: async (files: File[]) => {
+      // own flow: the agent stream of a setup is shown by the setup page, not the workspace
+      setError(null);
+      setBusy(true);
+      try {
+        const r = await api.analyze(files);
+        setState(r.state);
+        setSelected(undefined);
+        setFeeds({});
+        setTimings({});
+        if (r.status === "questions") setError("The Impact Analyst needs more information: " + (r.questions ?? []).map((q) => q.prompt).join(" "));
+        return r.status === "analyzed";
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+        return false;
+      } finally {
+        setBusy(false);
+      }
+    },
+    confirmSetup: async () => {
+      try {
+        setState(await api.confirmSetup());
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      }
+    },
     reset: async () => {
       await run(() => api.reset());
       setFeeds({});

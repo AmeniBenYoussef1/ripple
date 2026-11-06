@@ -327,3 +327,45 @@ textarea:focus { outline: none; border-color: var(--raspberry); }
 
 .tag-replay { margin-left: 8px; background: var(--cream); border-color: var(--cream); }
 @media (max-width: 1100px) { .sidebar { width: 76px; } }
+
+/* ---- event setup ---- */
+.dropzone { border: 2px dashed #D8CBB8; border-radius: 16px; background: var(--bg); padding: 28px; display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; color: var(--muted); cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+.dropzone strong { color: var(--ink); }
+.dropzone:hover, .dropzone.over { border-color: var(--teal-dark); background: #F5FBF9; }
+.dropzone.over svg { color: var(--teal-dark); }
+.link-like { color: var(--teal-dark); font-weight: 700; text-decoration: underline; }
+.file-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.file-list li { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto auto 34px; gap: 10px; align-items: center; padding: 8px 8px 8px 12px; border: 1px solid var(--line); border-radius: 12px; }
+.file-list li.bad { background: #FDF0F3; border-color: #F0C9D3; }
+.file-ic { width: 34px; height: 34px; border-radius: 10px; background: var(--bg); color: var(--teal-dark); display: inline-flex; align-items: center; justify-content: center; }
+.file-n { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip-bad { background: #FDF0F3; color: var(--raspberry-dark); }
+.mode-note { border-radius: 12px; padding: 12px 14px; font-size: 13px; border-left: 4px solid; }
+.mode-note.replay { background: var(--bg); border-color: var(--coral); }
+.mode-note.live { background: #F5FBF9; border-color: var(--teal); }
+.setup-steps { background: #FFF8F4; border: 1px solid var(--coral); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.setup-steps .spin { color: var(--coral-dark); }
+.setup-steps ol { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 3px; font-size: 13px; color: var(--muted); max-height: 180px; overflow: hidden; }
+.setup-steps li.now { color: var(--ink); font-weight: 600; }
+.understood { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.u-block { background: var(--bg); border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.u-head { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 700; color: var(--muted); }
+.u-head svg { color: var(--teal-dark); }
+.u-head .source { margin-left: auto; }
+.u-big { font-size: 22px; font-weight: 800; letter-spacing: -0.3px; }
+.u-groups { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.u-groups li { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; align-items: center; gap: 10px; background: #fff; border-radius: 10px; padding: 8px 10px; }
+.u-size { font-size: 18px; font-weight: 800; text-align: right; font-variant-numeric: tabular-nums; }
+.u-label { font-weight: 600; }
+.u-timeline { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 16px; }
+.u-timeline li { display: flex; align-items: center; gap: 10px; font-size: 13px; padding: 4px 0; border-bottom: 1px solid var(--cream); }
+.u-time { flex: none; width: 92px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.u-timeline .tag { margin-left: auto; font-size: 11px; padding: 1px 8px; }
+.source { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; font-weight: 600; color: var(--muted); background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
+.setup-map .map { max-height: 380px; }
+.setup-actions { display: flex; justify-content: flex-end; align-items: center; gap: 16px; }
+@media (max-width: 1180px) { .understood, .u-timeline { grid-template-columns: 1fr; } }
+.u-wide { grid-column: 1 / -1; }
+
+.col-title { font-size: 13px; font-weight: 800; fill: var(--muted); text-anchor: middle; letter-spacing: 0.4px; text-transform: uppercase; }
+.edge-idle { stroke-opacity: 0.55; }

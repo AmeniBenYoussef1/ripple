@@ -143,6 +143,16 @@ export interface EventState {
   total_cost: string;
   saved_total: string;
   files: string[];
+  setup?: SetupInfo;
+}
+
+export interface SetupInfo {
+  status: "not_analyzed" | "analyzed";
+  replay?: boolean;
+  at?: string;
+  files?: { name: string; bytes: number }[];
+  cost?: string;
+  confirmed?: boolean;
 }
 
 export type AgentName = "impact_analyst" | "resource_finder" | "replanner" | "coordinator";

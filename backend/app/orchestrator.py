@@ -33,7 +33,7 @@ from typing import Any, Callable, Optional
 from pydantic import BaseModel
 
 from .agents import (AgentResult, CandidatesReply, CoordinatorReply, DisruptionReply,
-                     EventCallback, Question, ScenariosReply, call_agent)
+                     EventModelReply, EventCallback, Question, ScenariosReply, call_agent)
 from .exports import NEWCOMERS_GROUP, build_attendee_csv, build_ics
 from .impact_engine import propagate, route
 from .models import EventModel, NodeType, Scenario
@@ -49,6 +49,7 @@ LATE_REGISTRATIONS = DATA / "late_registrations.csv"   # the newcomers of a "res
 # engine agent name -> (agents.py key, reply shape, max tool rounds)
 SPEC: dict[str, tuple[str, type[BaseModel], int]] = {
     "impact_analyst": ("impact", DisruptionReply, 6),
+    "setup_analyst": ("impact", EventModelReply, 14),   # the Impact Analyst at setup: files -> event model
     "resource_finder": ("finder", CandidatesReply, 10),
     "replanner": ("replanner", ScenariosReply, 6),
     "coordinator": ("coordinator", CoordinatorReply, 8),
@@ -110,7 +111,7 @@ def new_event(event_id: str, model_path: Path = GENERATED_MODEL, events_dir: Pat
     model = EventModel.model_validate(json.loads(model_path.read_text(encoding="utf-8")))
     ev = Event(event_id, events_dir / f"{event_id}.json",
                {"event_id": event_id, "search_area": search_area, "model": None,
-                "history": [], "cache": {}, "costs": []})
+                "history": [], "cache": {}, "costs": [], "setup": {"status": "not_analyzed"}})
     shutil.rmtree(ev.files_dir.parent, ignore_errors=True)
     ev.set_model(model)
     ev.save()
@@ -412,6 +413,99 @@ def coordinator_message(model: EventModel, slice_ids: list[str], effects: dict, 
         '{"id": node id, "start": "HH:MM", "end": "HH:MM", "place": "..."}. Empty list if nothing moves.\n'
         f"{dumps(payload)}"
     )
+
+
+# ---- Setup: event files -> event model ------------------------------------------------
+
+SETUP_FILE_TYPES = {".csv", ".pdf", ".txt", ".json"}
+SETUP_MAX_FILES = 5                    # Cominty: at most 5 files per message
+SETUP_MAX_BYTES = 10 * 1024 * 1024     # generous for event files; the platform allows more
+
+
+def setup_message(n_files: int) -> str:
+    return f"""Setup. Build the event model for this event from the {n_files} attached files.
+Reply with {{"event_model": {{...}}}} as described in the ripple-contracts skill.
+
+Conventions:
+- event_id "codesprint". Reuse the ids given in schedule.json for commitments and program items.
+- The venue is a resource with id "venue_<name in snake_case>", with capacity and address in attrs.
+- Groups: one per audience that must be informed (attendees, speakers, each speaker with their own
+  session, workshop participants, volunteers, the caterer). Ids start with "grp_". Put the real size
+  (count the rows in the files) in attrs.size.
+- The budget is a constraint node with id "budget" and attrs.remaining_eur.
+- Edges (from -> to means a change to `from` can affect `to`):
+  located_at: venue -> commitments and sessions held there.
+  depends_on: prerequisite commitment -> the program item that needs it.
+  scheduled_after: each main program item -> the next one (the workshop runs in parallel, not in the chain).
+  must_inform: commitment or program item -> each group that must hear about a change to it.
+  sized_by: the attendees group -> the venue and the catering whose size depends on it.
+  constrained_by: budget -> the commitments it pays for.
+- Put the source file name in "source" for every fact taken from a file."""
+
+
+def check_setup_files(files: list[tuple[str, bytes]]) -> None:
+    if not files:
+        raise OrchestratorError("add your event files first")
+    if len(files) > SETUP_MAX_FILES:
+        raise OrchestratorError(f"at most {SETUP_MAX_FILES} files at a time (a Cominty limit); merge some, e.g. people lists")
+    for name, data in files:
+        if Path(name).suffix.lower() not in SETUP_FILE_TYPES:
+            raise OrchestratorError(f"{name}: only CSV, PDF, TXT or JSON files")
+        if len(data) > SETUP_MAX_BYTES:
+            raise OrchestratorError(f"{name} is larger than 10 MB")
+        if not data:
+            raise OrchestratorError(f"{name} is empty")
+
+
+def model_checker(parsed: EventModelReply) -> None:
+    m = parsed.event_model
+    ids = {n.id for n in m.nodes}
+    if not any(n.type == NodeType.group for n in m.nodes):
+        raise ValueError("the event model has no group: add one group per audience that must be informed")
+    bad = [f"{e.from_id}->{e.to_id}" for e in m.edges if e.from_id not in ids or e.to_id not in ids]
+    if bad:
+        raise ValueError(f"these edges use node ids that do not exist: {bad[:10]}")
+
+
+async def analyze_event(event: Event, files: list[tuple[str, bytes]], runner: Runner) -> dict[str, Any]:
+    """Files -> Impact Analyst -> event model. Live uploads to Cominty; Replay uses the recorded setup.
+
+    A new model starts the event over: history, cache and costs are cleared.
+    """
+    check_setup_files(files)
+    await runner.stage("setup_started", {"files": [n for n, _ in files], "replay": runner.demo})
+    file_ids: list[str] = []
+    if not runner.demo:
+        for name, data in files:
+            file_ids.append((await runner.client.chat.upload_file(data, filename=name)).id)
+            await runner.stage("setup_uploaded", {"file": name})
+    # live runs are recorded apart, so they never overwrite the recording Replay relies on
+    slug = "setup" if runner.demo else "setup-live"
+    res = await runner.call(slug, "setup_analyst", setup_message(len(files)), thread_name="Event setup",
+                            file_ids=file_ids or None, check=model_checker)
+    if res.questions:
+        q = [x.model_dump() for x in res.questions]
+        await runner.stage("setup_questions", {"questions": q})
+        return {"status": "questions", "questions": q}
+    model = res.data.event_model
+    event.set_model(model)
+    event.data.update(history=[], cache={}, costs=[])
+    add_cost(event, "setup", "impact_analyst", res.cost)
+    shutil.rmtree(event.files_dir.parent, ignore_errors=True)
+    event.data["setup"] = {"status": "analyzed", "replay": runner.demo, "at": now_iso(),
+                           "files": [{"name": n, "bytes": len(d)} for n, d in files],
+                           "cost": str(res.cost), "thread_id": res.thread_id}
+    event.save()
+    await runner.stage("setup_done", {"nodes": len(model.nodes), "edges": len(model.edges)})
+    return {"status": "analyzed", "setup": event.data["setup"]}
+
+
+def confirm_setup(event: Event) -> dict[str, Any]:
+    setup = event.data.setdefault("setup", {"status": "not_analyzed"})
+    setup["confirmed"] = True
+    setup["confirmed_at"] = now_iso()
+    event.save()
+    return setup
 
 
 # ---- The flow -----------------------------------------------------------------------

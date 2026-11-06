@@ -19,21 +19,24 @@ from pathlib import Path
 from typing import Any, AsyncIterator, Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from .agents import AgentOutputError
 from .geo import Geocoder, venue_pins
-from .orchestrator import (EVENTS, FIXTURES, GENERATED_MODEL, Event, OrchestratorError, Runner,
-                           approve_messages, choose_scenario, demo_mode, handle_disruption,
-                           load_event, new_event, total_cost)
+from .orchestrator import (DATA, EVENTS, FIXTURES, GENERATED_MODEL, SETUP_MAX_BYTES, Event, OrchestratorError,
+                           Runner, analyze_event, approve_messages, choose_scenario, confirm_setup, demo_mode,
+                           handle_disruption, load_event, new_event, total_cost)
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 DEFAULT_AREA = os.environ.get("RIPPLE_SEARCH_AREA", "Paris, France")
 FILE_TYPES = {".ics": "text/calendar", ".csv": "text/csv"}
+# the five fictional demo files, offered on the setup page ("Use the demo files")
+DEMO_FILES = ["participants.csv", "schedule.json", "catering_contract.txt", "people.csv", "budget.json"]
+DEMO_TYPES = {".csv": "text/csv", ".json": "application/json", ".txt": "text/plain"}
 
 
 def replay_delay_from_env() -> tuple[float, float]:
@@ -212,6 +215,34 @@ def create_app(events_dir: Path = EVENTS, fixtures_dir: Path = FIXTURES, model_p
             raise HTTPException(400, str(err)) from err
         broker.publish(event_id, "approved", {"ids": [m["id"] for m in approved]})
         return {"approved": approved}
+
+    @app.post("/api/events/{event_id}/analyze")
+    async def analyze(event_id: str, files: list[UploadFile] = File(...)) -> dict[str, Any]:
+        """Event files -> Impact Analyst -> event model (Live: uploaded to Cominty; Replay: recorded setup)."""
+        event = get_event(event_id)
+        data = []
+        for f in files:
+            blob = await f.read(SETUP_MAX_BYTES + 1)   # read at most one byte past the limit
+            data.append((Path(f.filename or "file").name, blob))
+        result = await guarded(event_id, lambda: analyze_event(event, data, runner_for(event_id)))
+        broker.clear(event_id)
+        return {**result, "state": state(get_event(event_id))}
+
+    @app.post("/api/events/{event_id}/setup/confirm")
+    async def confirm(event_id: str) -> dict[str, Any]:
+        event = get_event(event_id)
+        confirm_setup(event)
+        return state(event)
+
+    @app.get("/api/demo-files")
+    async def demo_files() -> list[dict[str, Any]]:
+        return [{"name": n, "bytes": (DATA / n).stat().st_size} for n in DEMO_FILES if (DATA / n).exists()]
+
+    @app.get("/api/demo-files/{name}")
+    async def demo_file(name: str) -> FileResponse:
+        if name not in DEMO_FILES or not (DATA / name).is_file():
+            raise HTTPException(404, f"no demo file {name!r}")
+        return FileResponse(DATA / name, media_type=DEMO_TYPES[Path(name).suffix], filename=name)
 
     @app.get("/api/events/{event_id}/venues")
     async def venues(event_id: str, disruption: Optional[str] = None) -> dict[str, Any]:

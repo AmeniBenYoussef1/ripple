@@ -194,6 +194,7 @@ export function OutboxPage() {
 
 export function SettingsPage() {
   const { state, reset, busy } = useRipple();
+  const nav = useNavigate();
   if (!state) return null;
   return (
     <div className="page">
@@ -213,7 +214,7 @@ export function SettingsPage() {
         <section className="card">
           <CardHead icon={<RotateCcw size={18} />} title="Start over" sub="Clears every problem, message and file of this event" />
           <button type="button" className="btn btn-danger" disabled={busy}
-            onClick={() => { if (confirm("Start the event over? This clears all problems, messages and files.")) void reset(); }}>
+            onClick={async () => { if (confirm("Start the event over? This clears all problems, messages and files.")) { await reset(); nav("/setup"); } }}>
             <RotateCcw size={16} />Reset event
           </button>
         </section>

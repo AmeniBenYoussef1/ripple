@@ -1,5 +1,5 @@
 // Sidebar, the stats bar and the "Report a problem" dialog.
-import { Home, Inbox, LayoutDashboard, Settings, X, Zap } from "lucide-react";
+import { FileUp, Home, Inbox, LayoutDashboard, Settings, X, Zap } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useRipple } from "../store";
@@ -20,6 +20,7 @@ export function Sidebar() {
   const drafts = state?.history.reduce((n, h) => n + (h.outbox ?? []).filter((m) => m.status === "draft").length, 0) ?? 0;
   const links = [
     { to: "/", label: "Home", icon: <Home size={18} />, end: true },
+    { to: "/setup", label: "Event setup", icon: <FileUp size={18} />, badge: state?.setup?.confirmed ? undefined : ("!" as const) },
     { to: "/event", label: "Event workspace", icon: <LayoutDashboard size={18} /> },
     { to: "/outbox", label: "Outbox", icon: <Inbox size={18} />, badge: drafts || undefined },
     { to: "/settings", label: "Settings", icon: <Settings size={18} /> },
@@ -32,7 +33,7 @@ export function Sidebar() {
           <li key={l.to}>
             <NavLink to={l.to} end={l.end} className={({ isActive }) => `side-link ${isActive ? "active" : ""}`}>
               {l.icon}<span>{l.label}</span>
-              {l.badge ? <span className="side-badge" aria-label={`${l.badge} drafts`}>{l.badge}</span> : null}
+              {l.badge ? <span className="side-badge" aria-label={l.badge === "!" ? "needs checking" : `${l.badge} drafts`}>{l.badge}</span> : null}
             </NavLink>
           </li>
         ))}

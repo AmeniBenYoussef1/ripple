@@ -20,6 +20,7 @@ sys.stdout.reconfigure(encoding="utf-8")  # accents in venue names on the Window
 from cominty_sdk import AsyncCominty, ComintyError  # noqa: E402
 
 from app.agents import AgentOutputError, build_event_model  # noqa: E402
+from app.orchestrator import setup_message  # noqa: E402
 from app.impact_engine import propagate, route  # noqa: E402
 from app.models import Disruption, EventModel  # noqa: E402
 
@@ -27,24 +28,7 @@ DATA = BACKEND / "demo_data"
 FILES = ["participants.csv", "schedule.json", "catering_contract.txt", "people.csv", "budget.json"]
 OUT = DATA / "event_model_generated.json"
 
-SETUP_MESSAGE = """Setup. Build the event model for this event from the 5 attached files.
-Reply with {"event_model": {...}} as described in the ripple-contracts skill.
-
-Conventions:
-- event_id "codesprint". Reuse the ids given in schedule.json for commitments and program items.
-- The venue is a resource with id "venue_<name in snake_case>", with capacity and address in attrs.
-- Groups: one per audience that must be informed (attendees, speakers, each speaker with their own
-  session, workshop participants, volunteers, the caterer). Ids start with "grp_". Put the real size
-  (count the rows in the files) in attrs.size.
-- The budget is a constraint node with id "budget" and attrs.remaining_eur.
-- Edges (from -> to means a change to `from` can affect `to`):
-  located_at: venue -> commitments and sessions held there.
-  depends_on: prerequisite commitment -> the program item that needs it.
-  scheduled_after: each main program item -> the next one (the workshop runs in parallel, not in the chain).
-  must_inform: commitment or program item -> each group that must hear about a change to it.
-  sized_by: the attendees group -> the venue and the catering whose size depends on it.
-  constrained_by: budget -> the commitments it pays for.
-- Put the source file name in "source" for every fact taken from a file."""
+SETUP_MESSAGE = setup_message(len(FILES))   # shared with the API (app/orchestrator.py)
 
 DEMOS = [
     ("1. Hall cancelled", Disruption(node="venue_main_hall", kind="lost"), None),
