@@ -1,0 +1,34 @@
+CATERING SERVICE AGREEMENT (FICTIONAL - DEMO DATA ONLY)
+
+Contract no.: CS-2026-014
+Date: 15 October 2026
+
+Between:
+  Client:   CodeSprint Organizing Team (contact: organizers@example.com)
+  Caterer:  Green Fork Catering (contact: orders@greenfork.example.com)
+
+1. Event
+   Event name: CodeSprint 2026
+   Event date: 21 November 2026
+
+2. Order
+   Item:     Lunch boxes (sandwich, salad, fruit, water)
+   Quantity: 200 lunch boxes
+   Of which: 20 vegetarian, 8 vegan, 4 gluten-free
+
+3. Delivery
+   Delivery time:    12:00
+   Delivery address: Main hall, [FICTIONAL ADDRESS]
+   The caterer will arrive no earlier than 11:30 and set up within 30 minutes.
+
+4. Price
+   Unit price: EUR 9.50 per lunch box
+   Total:      EUR 1,900.00 (VAT included)
+
+5. Changes
+   The quantity may be changed by up to +/- 15% until 48 hours before the event.
+   A change of delivery address or time must be confirmed in writing at least
+   24 hours before delivery.
+
+6. Cancellation
+   Cancellation less than 72 hours before the event: 50% of the total is due.

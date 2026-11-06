@@ -1,0 +1,14 @@
+/* Ripple palette. Contrast-checked. */
+:root {
+  --raspberry: #C14364;
+  --coral: #FF916B;
+  --cream: #EEE2D1;
+  --teal: #2CA18C;
+  --teal-dark: #1E7A69;
+  --coral-dark: #B4502C;
+  --raspberry-dark: #A3354F;
+  --ink: #2B2233;
+  --muted: #6A5F6E;
+  --bg: #FAF6F0;
+  --font: 'Plus Jakarta Sans', Inter, system-ui, sans-serif;
+}
