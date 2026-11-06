@@ -35,6 +35,7 @@ interface Store {
   choose: (scenarioId: string) => Promise<void>;
   answer: (text: string) => Promise<void>;
   toggleAction: (id: string, done: boolean) => Promise<void>;
+  editMessage: (id: string, subject: string, body: string) => Promise<boolean>;
   decide: (kind: "changes_requested" | "rejected", option: string, note?: string) => Promise<void>;
   relax: (body: { budget_eur?: number; capacity_slack?: number }) => Promise<void>;
   replan: (note: string) => Promise<void>;
@@ -258,6 +259,17 @@ export function RippleProvider({ children }: { children: ReactNode }) {
       } catch (e) {
         fail(e);
         await refresh().catch(() => undefined);
+      }
+    },
+    editMessage: async (id: string, subject: string, body: string) => {
+      try {
+        await api.editMessage(id, subject, body);
+        await refresh();
+        setNotice({ text: "Draft updated. The earlier version is kept in its history." });
+        return true;
+      } catch (e) {
+        fail(e);
+        return false;
       }
     },
     decide: async (kind, option, note = "") => {

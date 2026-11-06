@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field
 
 from .agents import AgentOutputError
 from .geo import Geocoder, venue_pins
-from .orchestrator import (replan_with, record_decision, relax_limits, set_action, answer_question, recorded_answers, recorded_options, DATA, EVENTS, FIXTURES, GENERATED_MODEL, SETUP_MAX_BYTES, Event, OrchestratorError,
+from .orchestrator import (edit_message, replan_with, record_decision, relax_limits, set_action, answer_question, recorded_answers, recorded_options, DATA, EVENTS, FIXTURES, GENERATED_MODEL, SETUP_MAX_BYTES, Event, OrchestratorError,
                            Runner, analyze_event, approve_messages, choose_scenario, confirm_setup, demo_mode,
                            handle_disruption, load_event, new_event, total_cost)
 
@@ -82,6 +82,11 @@ class RelaxBody(BaseModel):
 
 class ReplanBody(BaseModel):
     note: str = Field(min_length=1, max_length=300)
+
+
+class EditBody(BaseModel):
+    subject: str = Field(min_length=1, max_length=300)
+    body: str = Field(min_length=1, max_length=10000)
 
 
 class ApproveBody(BaseModel):
@@ -268,6 +273,11 @@ def create_app(events_dir: Path = EVENTS, fixtures_dir: Path = FIXTURES, model_p
         event = get_event(event_id)
         entry = await guarded(event_id, lambda: replan_with(event, disruption_id, body.note, runner_for(event_id)))
         return {"scored": entry["scored"], "relaxed": entry["relaxed"]}
+
+    @app.put("/api/events/{event_id}/outbox/{message_id}")
+    async def edit(event_id: str, message_id: str, body: EditBody) -> dict[str, Any]:
+        event = get_event(event_id)
+        return plain(event_id, lambda: edit_message(event, message_id, body.subject, body.body))
 
     @app.post("/api/events/{event_id}/outbox/approve")
     async def approve(event_id: str, body: ApproveBody) -> dict[str, Any]:

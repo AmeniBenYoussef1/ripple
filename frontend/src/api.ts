@@ -98,6 +98,8 @@ export const api = {
     call<{ scored: { feasible: boolean }[] }>(`${ev}/problems/${encodeURIComponent(did)}/relax`, { method: "POST", body: JSON.stringify(body) }),
   replan: (did: string, note: string) =>
     call<{ scored: { feasible: boolean }[] }>(`${ev}/problems/${encodeURIComponent(did)}/replan`, { method: "POST", body: JSON.stringify({ note }) }),
+  editMessage: (id: string, subject: string, body: string) =>
+    call<Message>(`${ev}/outbox/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify({ subject, body }) }),
   confirmSetup: () => call<EventState>(`${ev}/setup/confirm`, { method: "POST" }),
   demoFiles: () => call<{ name: string; bytes: number }[]>("/api/demo-files"),
   demoFileUrl: (name: string) => `${API}/api/demo-files/${encodeURIComponent(name)}`,

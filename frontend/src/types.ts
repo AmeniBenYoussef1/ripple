@@ -92,6 +92,12 @@ export interface Message {
   subject: string;
   body: string;
   status: "draft" | "approved";
+  recipients?: { name: string; email: string }[];
+  recipient_count?: number;
+  recipient_source?: string | null;
+  to_hint?: string;
+  edited?: boolean;
+  edits?: { at: string; subject: string; body: string }[];
 }
 
 export interface FileInfo {

@@ -407,3 +407,14 @@ textarea:focus { outline: none; border-color: var(--raspberry); }
 .relax-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .relax { display: flex; flex-direction: column; gap: 6px; background: var(--bg); border-radius: 12px; padding: 12px; font-size: 13px; font-weight: 600; }
 @media (max-width: 1180px) { .relax-grid { grid-template-columns: 1fr; } }
+
+/* ---- outbox: recipients and edits ---- */
+.recip { font-weight: 600; color: var(--muted); }
+.edited { margin-left: 6px; }
+.dialog-wide { width: min(720px, 94vw); }
+.people { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.field { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; font-weight: 700; color: var(--muted); }
+.field textarea, .field input { color: var(--ink); font-weight: 400; }
+.edits { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
+.edit-old { display: flex; flex-direction: column; gap: 4px; }
+.small-body { font-size: 12.5px; max-height: 160px; color: var(--muted); }

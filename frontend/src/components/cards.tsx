@@ -461,12 +461,15 @@ export function OutboxCard({ view, compact = false }: { view: View; compact?: bo
       ) : (
         <ul className="msg-list">
           {msgs.map((msg) => {
-            const size = sizeOf(m, msg.group);
+            const n = msg.recipient_count ?? sizeOf(m, msg.group);
             return (
               <li key={msg.id} className="msg-row">
                 <span className={`msg-dot ${msg.status}`} aria-hidden="true" />
                 <div className="msg-main">
-                  <div className="msg-group">{labelOf(m, msg.group)}{size && size > 1 ? ` · ${size}` : ""}</div>
+                  <div className="msg-group">{labelOf(m, msg.group)}
+                    <span className="recip" title={msg.recipient_source ? `From ${msg.recipient_source}` : undefined}>
+                      {n != null ? ` · ${n} recipient${n === 1 ? "" : "s"}` : ""}</span>
+                    {msg.edited && <span className="badge badge-soft small edited">edited</span>}</div>
                   <div className="sub ellipsis">{msg.subject}</div>
                 </div>
                 <span className={`chip ${msg.status === "approved" ? "chip-done" : "chip-waiting"}`}>{msg.status === "approved" ? "Approved" : "Draft"}</span>
@@ -503,25 +506,70 @@ export function OutboxCard({ view, compact = false }: { view: View; compact?: bo
 }
 
 function ReviewDialog({ msg, group, onClose, onApprove }: { msg: Message; group: string; onClose: () => void; onApprove: () => void }) {
+  const { editMessage, busy } = useRipple();
   const ref = useRef<HTMLDialogElement>(null);
+  const [editing, setEditing] = useState(false);
+  const [subject, setSubject] = useState(msg.subject);
+  const [body, setBody] = useState(msg.body);
+  const [allPeople, setAllPeople] = useState(false);
+  const [showEdits, setShowEdits] = useState(false);
   useEffect(() => ref.current?.showModal(), []);
+  useEffect(() => { setSubject(msg.subject); setBody(msg.body); }, [msg.subject, msg.body]);
+  const people = msg.recipients ?? [];
+  const shown = allPeople ? people : people.slice(0, 6);
+  const save = async () => { if (await editMessage(msg.id, subject, body)) setEditing(false); };
   return (
-    <dialog ref={ref} className="dialog" onClose={onClose} aria-labelledby="review-title">
+    <dialog ref={ref} className="dialog dialog-wide" onClose={onClose} aria-labelledby="review-title">
       <div className="dialog-head">
-        <h2 id="review-title">{msg.subject}</h2>
+        <h2 id="review-title">{editing ? "Edit the draft" : msg.subject}</h2>
         <button type="button" className="icon-btn" aria-label="Close" onClick={() => ref.current?.close()}><X size={18} /></button>
       </div>
       <dl className="meta">
         <dt>For</dt><dd>{group}</dd>
-        <dt>To</dt><dd>{msg.to}</dd>
+        <dt>To</dt><dd>{msg.to}{msg.recipient_source ? <span className="sub"> · from {msg.recipient_source}</span> : null}</dd>
         <dt>Channel</dt><dd>{msg.channel}</dd>
-        <dt>Status</dt><dd>{msg.status}</dd>
+        <dt>Status</dt><dd>{msg.status}{msg.edited ? " · edited by you" : ""}</dd>
       </dl>
-      <pre className="body">{msg.body}</pre>
+      {people.length > 1 && (
+        <div className="people">
+          {shown.map((p) => <span key={p.email} className="tag" title={p.email}>{p.name}</span>)}
+          {people.length > 6 && <button type="button" className="link-btn" onClick={() => setAllPeople(!allPeople)}>
+            {allPeople ? "show less" : `and ${people.length - 6} more`}</button>}
+        </div>
+      )}
+      {editing ? (
+        <div className="stack-sm">
+          <label className="field"><span>Subject</span><input className="text-input" value={subject} onChange={(e) => setSubject(e.target.value)} /></label>
+          <label className="field"><span>Message</span><textarea rows={10} value={body} onChange={(e) => setBody(e.target.value)} /></label>
+        </div>
+      ) : <pre className="body">{msg.body}</pre>}
+      {(msg.edits?.length ?? 0) > 0 && (
+        <div className="edits">
+          <button type="button" className="link-btn" onClick={() => setShowEdits(!showEdits)}>
+            {showEdits ? "Hide" : "Show"} {msg.edits!.length} earlier version{msg.edits!.length === 1 ? "" : "s"}</button>
+          {showEdits && msg.edits!.slice().reverse().map((e, i) => (
+            <div key={i} className="edit-old">
+              <div className="sub">Before {new Date(e.at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" })}</div>
+              <strong>{e.subject}</strong>
+              <pre className="body small-body">{e.body}</pre>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="row-end">
-        <button type="button" className="btn btn-ghost" onClick={() => navigator.clipboard?.writeText(`${msg.subject}\n\n${msg.body}`)}><Copy size={15} />Copy</button>
-        <button type="button" className="btn btn-secondary" onClick={() => ref.current?.close()}>Close</button>
-        {msg.status === "draft" && <button type="button" className="btn btn-primary" onClick={onApprove}><CheckCircle2 size={16} />Approve</button>}
+        {editing ? (
+          <>
+            <button type="button" className="btn btn-ghost" onClick={() => { setEditing(false); setSubject(msg.subject); setBody(msg.body); }}>Cancel</button>
+            <button type="button" className="btn btn-primary" disabled={busy || !subject.trim() || !body.trim()} onClick={save}>Save changes</button>
+          </>
+        ) : (
+          <>
+            <button type="button" className="btn btn-ghost" onClick={() => navigator.clipboard?.writeText(`${msg.subject}\n\n${msg.body}`)}><Copy size={15} />Copy</button>
+            {msg.status === "draft" && <button type="button" className="btn btn-secondary" onClick={() => setEditing(true)}>Edit</button>}
+            <button type="button" className="btn btn-secondary" onClick={() => ref.current?.close()}>Close</button>
+            {msg.status === "draft" && <button type="button" className="btn btn-primary" onClick={onApprove}><CheckCircle2 size={16} />Approve</button>}
+          </>
+        )}
       </div>
     </dialog>
   );

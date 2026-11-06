@@ -37,6 +37,7 @@ from .agents import (AgentResult, CandidatesReply, CoordinatorReply, DisruptionR
 from .exports import NEWCOMERS_GROUP, build_attendee_csv, build_ics
 from .impact_engine import propagate, route
 from .models import EventModel, NodeType, Scenario
+from .recipients import address, resolve
 from .scoring import score
 
 BACKEND = Path(__file__).resolve().parents[1]
@@ -767,7 +768,12 @@ async def _finish_coordination(event: Event, entry: dict, res: AgentResult, runn
     drafts = out["messages"]
     if entry["disruption"]["kind"] == "resized":   # a grown group: existing members are not messaged (code rule)
         drafts = [m for m in drafts if m["group"] != entry["disruption"]["node"]]
-    messages = [{**m, "id": f"{entry['id']}-m{i}", "status": "draft"} for i, m in enumerate(drafts, 1)]
+    messages = []
+    for i, m in enumerate(drafts, 1):
+        # recipients come from the event files (code), the agent's "to" is only kept as a hint
+        r = resolve(model, m["group"], DATA)
+        messages.append(address({**m, "id": f"{entry['id']}-m{i}", "status": "draft", "to_hint": m.get("to", ""),
+                                 "recipients": r["recipients"], "recipient_source": r["source"], "edits": []}))
     files = build_files(event, entry["id"], model, out["revised_schedule"], messages)
     if "coordinator" in routing.get("hashes", {}) and res.data is not None:
         event.data["cache"]["coordinator"] = {"hash": routing["hashes"]["coordinator"], "output": out}
@@ -919,6 +925,27 @@ async def replan_with(event: Event, disruption_id: str, note: str, runner: Runne
     log(event, "constraint", f"Allows: {note} (new options prepared)", disruption=entry["id"])
     event.save()
     return entry
+
+
+def edit_message(event: Event, message_id: str, subject: str, body: str) -> dict[str, Any]:
+    """The organizer edits a draft before approving it; every earlier version is kept."""
+    for h in event.data["history"]:
+        for m in h.get("outbox", []):
+            if m["id"] != message_id:
+                continue
+            if m["status"] != "draft":
+                raise OrchestratorError("only drafts can be edited")
+            subject, body = subject.strip(), body.strip()
+            if not subject or not body:
+                raise OrchestratorError("a message needs a subject and a text")
+            if subject == m.get("subject") and body == m.get("body"):
+                return m
+            m.setdefault("edits", []).append({"at": now_iso(), "subject": m.get("subject", ""), "body": m.get("body", "")})
+            m.update(subject=subject, body=body, edited=True)
+            log(event, "edit", f"Edited the message to {m['group']}: {subject}", disruption=h["id"], message=message_id)
+            event.save()
+            return m
+    raise OrchestratorError(f"unknown message ids: ['{message_id}']")
 
 
 def approve_messages(event: Event, ids: list[str]) -> list[dict[str, Any]]:
