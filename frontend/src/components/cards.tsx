@@ -1,5 +1,6 @@
 // Workspace cards: agents, live updates, proposed plan, outbox.
 import {
+  Ban, ClipboardCheck, MessageSquareWarning, Square, SquareCheckBig,
   Activity, ArrowRightLeft, CalendarClock, CheckCircle2, ChevronDown, Clock, Coins, Copy, Download,
   ExternalLink, FileSpreadsheet, FileText, Inbox, Loader2, MinusCircle, Moon, Radar, RotateCcw, Search,
   Send, Sparkles, TriangleAlert, Users, X,
@@ -181,7 +182,8 @@ function CoordinatorQuestion({ view }: { view: View }) {
 }
 
 export function PlanCard({ view, onNewProblem }: { view: View; onNewProblem: () => void }) {
-  const { choose, busy, report, state, pending } = useRipple();
+  const { choose, busy, report, state, pending, decide } = useRipple();
+  const [note, setNote] = useState("");
   const liveOnly = (sid: string) => !!state?.demo_mode && !(state.replayable?.[view.id]?.options ?? []).includes(sid);
   const [asking, setAsking] = useState(false);
   const [showAll, setShowAll] = useState(false);
@@ -218,7 +220,10 @@ export function PlanCard({ view, onNewProblem }: { view: View; onNewProblem: () 
     );
   }
 
-  const top = scored.find((s) => s.id === view.chosen) ?? scored.find((s) => s.feasible) ?? scored[0];
+  const rejected = new Set(view.rejected ?? []);
+  const open = scored.filter((s) => !rejected.has(s.id));
+  if (!open.some((s) => s.feasible) && !view.chosen) return <NoFitCard view={view} />;
+  const top = scored.find((s) => s.id === view.chosen) ?? open.find((s) => s.feasible) ?? scored[0];
   const others = scored.filter((s) => s.id !== top.id);
   const scen = view.scenarios?.find((s) => s.id === top.id);
   const venue = venueOf(scen, view.candidates ?? []);
@@ -275,10 +280,18 @@ export function PlanCard({ view, onNewProblem }: { view: View; onNewProblem: () 
           <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => setAsking(!asking)} aria-expanded={asking}>
             <ArrowRightLeft size={16} />Request changes
           </button>
+          <button type="button" className="btn btn-ghost" disabled={busy}
+            onClick={() => { if (confirm(`Reject option ${top.id}? Ripple will show the next best option.`)) void decide("rejected", top.id); }}>
+            <Ban size={16} />Reject
+          </button>
         </div>
       )}
       {asking && (
         <div className="request">
+          <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} className="note-input"
+            placeholder={`What should change in option ${top.id}? (saved with the time)`} aria-label="What should change" />
+          <button type="button" className="btn btn-secondary" disabled={!note.trim()}
+            onClick={() => { void decide("changes_requested", top.id, note); setNote(""); setAsking(false); }}>Save my request</button>
           <button type="button" className="btn btn-ghost" onClick={() => { setAsking(false); othersRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); othersRef.current?.focus(); }}>
             Choose another option
           </button>
@@ -286,11 +299,13 @@ export function PlanCard({ view, onNewProblem }: { view: View; onNewProblem: () 
         </div>
       )}
 
+      <Decisions view={view} />
+
       {others.length > 0 && (
         <div className="others" ref={othersRef} tabIndex={-1}>
           <div className="eyebrow">Other options</div>
           {others.map((s) => (
-            <div key={s.id} className={`other ${s.feasible ? "" : "infeasible"}`}>
+            <div key={s.id} className={`other ${s.feasible && !rejected.has(s.id) ? "" : "infeasible"}`}>
               <div className="other-main">
                 <div className="other-title"><span className="other-id">{s.id}</span>{s.title}</div>
                 <div className="sub">
@@ -299,7 +314,8 @@ export function PlanCard({ view, onNewProblem }: { view: View; onNewProblem: () 
                     : <span className="reason">Fails a hard limit: {s.violations.join("; ")}</span>}
                 </div>
               </div>
-              {s.feasible && view.coordinator === "waiting_for_choice" && (liveOnly(s.id)
+              {rejected.has(s.id) && <span className="badge badge-grey">Rejected</span>}
+              {s.feasible && !rejected.has(s.id) && view.coordinator === "waiting_for_choice" && (liveOnly(s.id)
                 ? <span className="row"><span className="tag" title="This option's messages were not recorded">Live mode only</span>
                     <button type="button" className="btn btn-secondary btn-sm" disabled>Choose {s.id}</button></span>
                 : <button type="button" className="btn btn-secondary btn-sm" disabled={!canChoose} onClick={() => choose(s.id)}>
@@ -308,6 +324,116 @@ export function PlanCard({ view, onNewProblem }: { view: View; onNewProblem: () 
             </div>
           ))}
         </div>
+      )}
+    </section>
+  );
+}
+
+// ---- decisions ----
+
+const DECISION_WORDS = { approved: "Approved", changes_requested: "Asked for changes to", rejected: "Rejected" };
+
+export function Decisions({ view }: { view: View }) {
+  const list = view.decisions ?? [];
+  if (!list.length) return null;
+  return (
+    <div className="decisions">
+      <div className="eyebrow">Your decisions</div>
+      <ul>{list.map((d, i) => (
+        <li key={i}><time>{new Date(d.at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</time>
+          <span><strong>{DECISION_WORDS[d.kind]} option {d.option}</strong>{d.note ? ` · "${d.note}"` : ""}</span></li>
+      ))}</ul>
+    </div>
+  );
+}
+
+// ---- no option fits ----
+
+export function NoFitCard({ view }: { view: View }) {
+  const { state, relax, replan, busy, pending } = useRipple();
+  const budgetNode = state?.model.nodes.find((n) => n.type === "constraint" && typeof n.attrs.remaining_eur === "number");
+  const [budget, setBudget] = useState(String(budgetNode?.attrs.remaining_eur ?? ""));
+  const [slack, setSlack] = useState(String(view.relaxed?.capacity_slack ?? 0));
+  const [date, setDate] = useState("");
+  const replay = !!state?.demo_mode;
+  const scored = view.scored ?? [];
+  const rejected = new Set(view.rejected ?? []);
+  return (
+    <section className="card nofit">
+      <CardHead icon={<MessageSquareWarning size={18} />} title="No option fits all your limits"
+        sub="Ripple won't pick an option that breaks a hard limit. Tell it what you can relax." />
+      <ul className="nofit-reasons">
+        {scored.map((s) => (
+          <li key={s.id}><strong>Option {s.id}</strong> {s.title}
+            <div className="reason">{rejected.has(s.id) ? "You rejected it." : s.violations.join("; ") || "—"}</div></li>
+        ))}
+      </ul>
+      <div className="eyebrow">What can you relax?</div>
+      <div className="relax-grid">
+        <label className="relax"><span>Budget left (EUR)</span>
+          <input className="text-input" type="number" min={0} step={100} value={budget} onChange={(e) => setBudget(e.target.value)} />
+          <button type="button" className="btn btn-secondary btn-sm" disabled={busy || budget === ""}
+            onClick={() => relax({ budget_eur: Number(budget) })}>Use this budget</button>
+        </label>
+        <label className="relax"><span>People who can follow from an overflow space</span>
+          <input className="text-input" type="number" min={0} step={5} value={slack} onChange={(e) => setSlack(e.target.value)} />
+          <button type="button" className="btn btn-secondary btn-sm" disabled={busy || slack === ""}
+            onClick={() => relax({ capacity_slack: Number(slack) })}>Accept this</button>
+        </label>
+        <label className="relax"><span>Another date or time</span>
+          <input className="text-input" value={date} onChange={(e) => setDate(e.target.value)} disabled={replay}
+            placeholder={replay ? "Live mode only" : "e.g. any Saturday in November"} />
+          <button type="button" className="btn btn-secondary btn-sm" disabled={busy || replay || !date.trim()}
+            onClick={() => replan(date)}>{pending === "replan" ? <Loader2 size={14} className="spin" /> : null}Ask for new options</button>
+        </label>
+      </div>
+      <p className="fine">Budget and capacity re-check the same options in code, instantly. A new date needs new options from the Replanner{replay ? ", so it works in Live mode only" : ""}.</p>
+    </section>
+  );
+}
+
+// ---- recovery plan (the Coordinator's checklist) ----
+
+const PRIORITY = { high: "badge-coral", medium: "badge-grey", low: "badge-soft" };
+
+export function RecoveryPlan({ view }: { view: View }) {
+  const { toggleAction } = useRipple();
+  const actions = view.actions ?? [];
+  const done = actions.filter((a) => a.status === "done").length;
+  return (
+    <section className="card" id="recovery-card">
+      <CardHead icon={<ClipboardCheck size={18} />} title="Recovery plan"
+        sub="What your team does next. Tick items as they are done; Ripple saves it."
+        right={actions.length ? <span className="sub"><strong>{done}</strong> of {actions.length} done</span> : null} />
+      {actions.length === 0 ? (
+        <p className="empty">{view.coordinator === "waiting_for_choice" ? "The checklist appears once you approve an option."
+          : view.coordinator === "question" ? "The checklist appears once you answer the Coordinator's question."
+          : "No actions for this problem."}</p>
+      ) : (
+        <>
+          <div className="progress" role="progressbar" aria-valuemin={0} aria-valuemax={actions.length} aria-valuenow={done}>
+            <span style={{ width: `${(100 * done) / actions.length}%` }} />
+          </div>
+          <ul className="actions">
+            {actions.map((a) => (
+              <li key={a.id} className={a.status}>
+                <button type="button" className="check" role="checkbox" aria-checked={a.status === "done"}
+                  aria-label={`${a.title}: ${a.status === "done" ? "done" : "to do"}`} onClick={() => toggleAction(a.id, a.status !== "done")}>
+                  {a.status === "done" ? <SquareCheckBig size={20} /> : <Square size={20} />}
+                </button>
+                <div className="action-main">
+                  <div className="action-title">{a.title}</div>
+                  {a.description && <div className="sub">{a.description}</div>}
+                  <div className="action-meta">
+                    {a.owner && <span className="tag"><Users size={12} />{a.owner}</span>}
+                    {a.deadline && <span className="tag"><Clock size={12} />{a.deadline}</span>}
+                    <span className={`badge ${PRIORITY[a.priority]} small`}>{a.priority}</span>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </section>
   );

@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field
 
 from .agents import AgentOutputError
 from .geo import Geocoder, venue_pins
-from .orchestrator import (answer_question, recorded_answers, recorded_options, DATA, EVENTS, FIXTURES, GENERATED_MODEL, SETUP_MAX_BYTES, Event, OrchestratorError,
+from .orchestrator import (replan_with, record_decision, relax_limits, set_action, answer_question, recorded_answers, recorded_options, DATA, EVENTS, FIXTURES, GENERATED_MODEL, SETUP_MAX_BYTES, Event, OrchestratorError,
                            Runner, analyze_event, approve_messages, choose_scenario, confirm_setup, demo_mode,
                            handle_disruption, load_event, new_event, total_cost)
 
@@ -63,6 +63,25 @@ class DisruptionBody(BaseModel):
 class AnswerBody(BaseModel):
     text: str = Field(min_length=1, max_length=1000)
     disruption: Optional[str] = None
+
+
+class ActionBody(BaseModel):
+    done: bool
+
+
+class DecisionBody(BaseModel):
+    kind: str = Field(pattern="^(changes_requested|rejected)$")
+    option: str
+    note: str = Field(default="", max_length=1000)
+
+
+class RelaxBody(BaseModel):
+    budget_eur: Optional[float] = None
+    capacity_slack: Optional[int] = None
+
+
+class ReplanBody(BaseModel):
+    note: str = Field(min_length=1, max_length=300)
 
 
 class ApproveBody(BaseModel):
@@ -219,6 +238,36 @@ def create_app(events_dir: Path = EVENTS, fixtures_dir: Path = FIXTURES, model_p
         """Answer the Coordinator's clarifying question (same Cominty thread)."""
         event = get_event(event_id)
         return await guarded(event_id, lambda: answer_question(event, body.text, runner_for(event_id), body.disruption))
+
+    def plain(event_id: str, work):
+        """Small code-only changes: no agent runs, errors become 400."""
+        try:
+            return work()
+        except OrchestratorError as err:
+            raise HTTPException(400, str(err)) from err
+
+    @app.post("/api/events/{event_id}/actions/{action_id}")
+    async def action(event_id: str, action_id: str, body: ActionBody) -> dict[str, Any]:
+        event = get_event(event_id)
+        return plain(event_id, lambda: set_action(event, action_id, body.done))
+
+    @app.post("/api/events/{event_id}/problems/{disruption_id}/decision")
+    async def decision(event_id: str, disruption_id: str, body: DecisionBody) -> dict[str, Any]:
+        event = get_event(event_id)
+        return plain(event_id, lambda: record_decision(event, disruption_id, body.kind, body.option, body.note))
+
+    @app.post("/api/events/{event_id}/problems/{disruption_id}/relax")
+    async def relax(event_id: str, disruption_id: str, body: RelaxBody) -> dict[str, Any]:
+        event = get_event(event_id)
+        entry = plain(event_id, lambda: relax_limits(event, disruption_id, body.budget_eur, body.capacity_slack))
+        return {"scored": entry["scored"], "relaxed": entry["relaxed"]}
+
+    @app.post("/api/events/{event_id}/problems/{disruption_id}/replan")
+    async def replan(event_id: str, disruption_id: str, body: ReplanBody) -> dict[str, Any]:
+        """Relax a limit that needs new options (e.g. another date): the Replanner runs again."""
+        event = get_event(event_id)
+        entry = await guarded(event_id, lambda: replan_with(event, disruption_id, body.note, runner_for(event_id)))
+        return {"scored": entry["scored"], "relaxed": entry["relaxed"]}
 
     @app.post("/api/events/{event_id}/outbox/approve")
     async def approve(event_id: str, body: ApproveBody) -> dict[str, Any]:

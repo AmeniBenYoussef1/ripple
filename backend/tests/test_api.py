@@ -146,3 +146,29 @@ def test_venues_endpoint_uses_the_geocoder(tmp_path):
         assert all(v["url"].startswith("http") for v in out["candidates"])
         with_address = [v for v in out["candidates"] if v["address"]]
         assert all(v["lat"] is not None for v in with_address)
+
+
+def test_part3_endpoints(client):
+    one = client.post("/api/events/demo/disruptions", json={"text": T1}).json()
+    r = client.post(f"/api/events/demo/problems/{one['id']}/decision", json={"kind": "rejected", "option": "A", "note": "no"})
+    assert r.status_code == 200 and r.json()["kind"] == "rejected"
+    assert client.post(f"/api/events/demo/problems/{one['id']}/decision", json={"kind": "maybe", "option": "A"}).status_code == 422
+    r = client.post(f"/api/events/demo/problems/{one['id']}/relax", json={"capacity_slack": 10})
+    assert r.status_code == 200 and r.json()["relaxed"] == {"capacity_slack": 10}
+    top = next(s for s in one["scored"] if s["feasible"] and s["id"] != "A")
+    out = client.post(f"/api/events/demo/scenarios/{top['id']}/choose").json()
+    s = client.get("/api/events/demo").json()
+    acts = s["history"][0]["actions"]
+    assert acts, "the recovery plan has actions"
+    r = client.post(f"/api/events/demo/actions/{acts[0]['id']}", json={"done": True})
+    assert r.status_code == 200 and r.json()["status"] == "done"
+    assert client.post("/api/events/demo/actions/nope", json={"done": True}).status_code == 400
+    s = client.get("/api/events/demo").json()
+    assert [p["version"] for p in s["plans"]] == [1, 2]
+    assert {"setup", "problem", "decision", "constraint", "plan", "action"} <= {l["kind"] for l in s["log"]}
+
+
+def test_replan_with_another_date_is_live_only_in_replay(client):
+    one = client.post("/api/events/demo/disruptions", json={"text": T1}).json()
+    r = client.post(f"/api/events/demo/problems/{one['id']}/replan", json={"note": "another date in November"})
+    assert r.status_code == 400 and "no recording" in r.json()["detail"]

@@ -34,6 +34,10 @@ interface Store {
   report: (text: string) => Promise<void>;
   choose: (scenarioId: string) => Promise<void>;
   answer: (text: string) => Promise<void>;
+  toggleAction: (id: string, done: boolean) => Promise<void>;
+  decide: (kind: "changes_requested" | "rejected", option: string, note?: string) => Promise<void>;
+  relax: (body: { budget_eur?: number; capacity_slack?: number }) => Promise<void>;
+  replan: (note: string) => Promise<void>;
   approve: (ids: string[]) => Promise<void>;
   reset: () => Promise<void>;
   analyze: (files: File[]) => Promise<boolean>;
@@ -243,6 +247,47 @@ export function RippleProvider({ children }: { children: ReactNode }) {
       const r = await run("answer", () => api.answer(text, view.id), base);
       if (r?.status === "question") setNotice({ text: "The Coordinator needs one more answer.", target: "question" });
       else if (r) setNotice({ text: `Thanks. ${r.outbox.length} messages are ready for your review.`, target: "outbox" });
+    },
+    toggleAction: async (id: string, done: boolean) => {
+      // small code-only change: update on screen at once, then confirm with the server
+      setState((s) => s && { ...s, history: s.history.map((h) => ({ ...h,
+        actions: h.actions?.map((a) => (a.id === id ? { ...a, status: done ? "done" : "open" } : a)) })) });
+      try {
+        await api.setAction(id, done);
+        await refresh();
+      } catch (e) {
+        fail(e);
+        await refresh().catch(() => undefined);
+      }
+    },
+    decide: async (kind, option, note = "") => {
+      if (!view) return;
+      try {
+        await api.decide(view.id, kind, option, note);
+        await refresh();
+        setNotice({ text: kind === "rejected" ? `Option ${option} rejected. Ripple shows the next best option.`
+          : `Your request for option ${option} is saved. Choose another option or report a new problem.` });
+      } catch (e) {
+        fail(e);
+      }
+    },
+    relax: async (body) => {
+      if (!view) return;
+      try {
+        const r = await api.relax(view.id, body);
+        await refresh();
+        const n = r.scored.filter((x) => x.feasible).length;
+        setNotice({ text: n ? `With this change, ${n} option${n === 1 ? "" : "s"} now fit${n === 1 ? "s" : ""} your limits.`
+          : "Still no option fits. Try relaxing another limit." });
+      } catch (e) {
+        fail(e);
+      }
+    },
+    replan: async (note: string) => {
+      if (!view) return;
+      const base: View = { ...view, agents: { ...view.agents, replanner: { status: "working", detail: "Preparing new options…" } } };
+      const r = await run("replan", () => api.replan(view.id, note), base);
+      if (r) setNotice({ text: `The Replanner prepared ${r.scored.length} new options.` });
     },
     approve: async (ids: string[]) => {
       const r = await run("approve", () => api.approve(ids));

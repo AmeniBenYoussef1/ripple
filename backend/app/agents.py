@@ -19,7 +19,7 @@ from typing import Any, Awaitable, Callable, Optional, Type, TypeVar, Union
 
 from pydantic import BaseModel, Field, ValidationError
 
-from .models import Candidate, Disruption, EventModel, OutboxMessage, Scenario
+from .models import Action, Candidate, Disruption, EventModel, OutboxMessage, Scenario
 
 # ---- Reply shapes (top-level keys from reference.md) ------------------------
 
@@ -44,6 +44,7 @@ class CoordinatorReply(BaseModel):
     messages: list[OutboxMessage]
     revised_schedule: list[dict[str, Any]] = Field(default_factory=list)
     volunteer_tasks: list[dict[str, Any]] = Field(default_factory=list)
+    actions: list[Action] = Field(default_factory=list)
     files: list[str] = Field(default_factory=list)
 
 

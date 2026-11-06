@@ -111,11 +111,30 @@ def new_event(event_id: str, model_path: Path = GENERATED_MODEL, events_dir: Pat
     model = EventModel.model_validate(json.loads(model_path.read_text(encoding="utf-8")))
     ev = Event(event_id, events_dir / f"{event_id}.json",
                {"event_id": event_id, "search_area": search_area, "model": None,
-                "history": [], "cache": {}, "costs": [], "setup": {"status": "not_analyzed"}})
+                "history": [], "cache": {}, "costs": [], "setup": {"status": "not_analyzed"},
+                "plans": [], "log": []})
     shutil.rmtree(ev.files_dir.parent, ignore_errors=True)
     ev.set_model(model)
+    add_plan_version(ev, "Original plan, from your event files", None)
+    log(ev, "setup", "Event created from the saved event model")
     ev.save()
     return ev
+
+
+# ---- Event log and plan versions (shown on the History page) ----------------------------
+
+def log(event: Event, kind: str, text: str, **data: Any) -> None:
+    """One line of the event's timeline: setup, problem, decision, plan, constraint, edit, approval, action."""
+    event.data.setdefault("log", []).append({"at": now_iso(), "kind": kind, "text": text, **data})
+
+
+def add_plan_version(event: Event, title: str, disruption_id: Optional[str]) -> dict[str, Any]:
+    plans = event.data.setdefault("plans", [])
+    plan = {"version": len(plans) + 1, "at": now_iso(), "title": title, "disruption": disruption_id}
+    plans.append(plan)
+    if len(plans) > 1:
+        log(event, "plan", f"Plan v{plan['version']}: {title}", disruption=disruption_id, version=plan["version"])
+    return plan
 
 
 def load_event(event_id: str, events_dir: Path = EVENTS) -> Event:
@@ -411,6 +430,10 @@ def coordinator_message(model: EventModel, slice_ids: list[str], effects: dict, 
         '- "to": the address of a single person (see the attached people.csv), otherwise a short description '
         'like "40 workshop participants".\n'
         f"{rules}"
+        '- "actions": the recovery checklist for the organizer team, 3 to 8 items, most urgent first: '
+        '{"title", "description", "owner" (a role or team named in the files, e.g. "Volunteer lead", "Organizer", '
+        '"Caterer"), "deadline" (a time or day taken from the plan, never invented), "priority" ("high"|"medium"|"low")}. '
+        'Include confirming every item of the chosen option\'s "to_confirm" list.\n'
         '- "revised_schedule": every schedule item or commitment whose time or place changes: '
         '{"id": node id, "start": "HH:MM", "end": "HH:MM", "place": "..."}. Empty list if nothing moves.\n'
         f"{dumps(payload)}"
@@ -491,7 +514,10 @@ async def analyze_event(event: Event, files: list[tuple[str, bytes]], runner: Ru
         return {"status": "questions", "questions": q}
     model = res.data.event_model
     event.set_model(model)
-    event.data.update(history=[], cache={}, costs=[])
+    event.data.update(history=[], cache={}, costs=[], plans=[])
+    add_plan_version(event, "Original plan, from your event files", None)
+    log(event, "setup", f"Event analyzed from {len(files)} files" + (" (recorded analysis)" if runner.demo else ""),
+        files=[n for n, _ in files])
     add_cost(event, "setup", "impact_analyst", res.cost)
     shutil.rmtree(event.files_dir.parent, ignore_errors=True)
     event.data["setup"] = {"status": "analyzed", "replay": runner.demo, "at": now_iso(),
@@ -506,6 +532,7 @@ def confirm_setup(event: Event) -> dict[str, Any]:
     setup = event.data.setdefault("setup", {"status": "not_analyzed"})
     setup["confirmed"] = True
     setup["confirmed_at"] = now_iso()
+    log(event, "setup", "Organizer confirmed what Ripple understood")
     event.save()
     return setup
 
@@ -608,6 +635,7 @@ async def handle_disruption(event: Event, text: str, runner: Runner, area: Optio
         outbox=[], files=[],
     )
     event.data["history"].append(entry)
+    log(event, "problem", f"Problem reported: {text}", disruption=did)
     event.save()
     await runner.stage("saved", {"disruption_id": did, "saved": saved, "saved_total": entry["saved_total"]})
 
@@ -635,7 +663,12 @@ async def choose_scenario(event: Event, scenario_id: Optional[str], runner: Runn
         info = next(x for x in entry["scored"] if x["id"] == scenario_id)
         if not info["feasible"]:
             raise OrchestratorError(f"scenario {scenario_id} fails a hard limit: {info['violations']}")
+    if scenario_id is not None and scenario_id in entry.get("rejected", []):
+        raise OrchestratorError(f"option {scenario_id} was rejected")
     await _coordinate(event, entry, scenario, runner)
+    if scenario is not None:
+        _decide(event, entry, "approved", scenario_id, "")
+        event.save()
     await runner.stage("done", {"disruption_id": entry["id"], "coordinator": entry["coordinator"]})
     return {"disruption": entry["id"], "chosen": scenario_id, "status": entry["coordinator"],
             "coordinator_question": entry.get("coordinator_question", []), "outbox": entry["outbox"],
@@ -740,7 +773,11 @@ async def _finish_coordination(event: Event, entry: dict, res: AgentResult, runn
         event.data["cache"]["coordinator"] = {"hash": routing["hashes"]["coordinator"], "output": out}
 
     entry.update(coordinator="done", coordinator_question=[], outbox=messages,
-                 revised_schedule=out["revised_schedule"], volunteer_tasks=out["volunteer_tasks"], files=files)
+                 revised_schedule=out["revised_schedule"], volunteer_tasks=out["volunteer_tasks"], files=files,
+                 actions=make_actions(entry["id"], out))
+    chosen = next((s for s in entry.get("scenarios", []) if s["id"] == entry.get("chosen")), None)
+    add_plan_version(event, f"{entry['text']} {chosen['title']}" if chosen else f"{entry['text']} People informed",
+                     entry["id"])
     event.save()
     await runner.stage("outbox", {"disruption_id": entry["id"], "outbox": messages, "files": files,
                                   "revised_schedule": out["revised_schedule"],
@@ -766,6 +803,124 @@ def build_files(event: Event, disruption_id: str, model: EventModel,
     return files
 
 
+def make_actions(disruption_id: str, out: dict) -> list[dict[str, Any]]:
+    """The Coordinator's checklist; older replies without one fall back to their volunteer tasks."""
+    raw = out.get("actions") or [
+        {"title": t.get("task", ""), "owner": t.get("who", ""), "deadline": t.get("time", ""), "priority": "medium"}
+        for t in out.get("volunteer_tasks", []) if t.get("task")]
+    return [{"id": f"{disruption_id}-a{i}", "title": a.get("title", ""), "description": a.get("description", ""),
+             "owner": a.get("owner", ""), "deadline": a.get("deadline", ""),
+             "priority": a.get("priority") if a.get("priority") in ("high", "medium", "low") else "medium",
+             "status": "open", "source": "coordinator" if out.get("actions") else "volunteer task"}
+            for i, a in enumerate(raw, 1)]
+
+
+def set_action(event: Event, action_id: str, done: bool) -> dict[str, Any]:
+    for h in event.data["history"]:
+        for a in h.get("actions", []):
+            if a["id"] == action_id:
+                a["status"] = "done" if done else "open"
+                a["done_at"] = now_iso() if done else None
+                log(event, "action", f"{'Done' if done else 'Reopened'}: {a['title']}", disruption=h["id"], action=action_id)
+                event.save()
+                return a
+    raise OrchestratorError(f"unknown action {action_id!r}")
+
+
+def _entry(event: Event, disruption_id: str) -> dict[str, Any]:
+    entry = next((h for h in event.data["history"] if h["id"] == disruption_id), None)
+    if entry is None:
+        raise OrchestratorError(f"unknown problem {disruption_id!r}")
+    return entry
+
+
+def _decide(event: Event, entry: dict, kind: str, option: Optional[str], note: str) -> dict[str, Any]:
+    d = {"kind": kind, "option": option, "note": note.strip(), "at": now_iso()}
+    entry.setdefault("decisions", []).append(d)
+    words = {"approved": "Approved", "changes_requested": "Asked for changes to", "rejected": "Rejected"}[kind]
+    log(event, "decision", f"{words} option {option}" + (f": {note.strip()}" if note.strip() else ""),
+        disruption=entry["id"], option=option, decision=kind)
+    return d
+
+
+def record_decision(event: Event, disruption_id: str, kind: str, option: str, note: str = "") -> dict[str, Any]:
+    """Request changes or reject an option (approving goes through choose_scenario)."""
+    if kind not in ("changes_requested", "rejected"):
+        raise OrchestratorError("a decision is changes_requested or rejected")
+    entry = _entry(event, disruption_id)
+    if option not in {s["id"] for s in entry.get("scenarios", [])}:
+        raise OrchestratorError(f"unknown scenario {option!r}")
+    if entry.get("coordinator") in ("done", "question"):
+        raise OrchestratorError(f"a scenario was already chosen for {entry['id']}")
+    d = _decide(event, entry, kind, option, note)
+    if kind == "rejected" and option not in entry.setdefault("rejected", []):
+        entry["rejected"].append(option)
+    event.save()
+    return d
+
+
+def relax_limits(event: Event, disruption_id: str, budget_eur: Optional[float] = None,
+                 capacity_slack: Optional[int] = None) -> dict[str, Any]:
+    """The organizer relaxes a hard limit; code re-scores the same options (no agent runs)."""
+    entry = _entry(event, disruption_id)
+    model = event.model
+    relaxed = entry.setdefault("relaxed", {})
+    if budget_eur is not None:
+        if budget_eur < 0:
+            raise OrchestratorError("the budget cannot be negative")
+        node = next((n for n in model.nodes if n.type == NodeType.constraint and "remaining_eur" in n.attrs), None)
+        if node is None:
+            raise OrchestratorError("this event has no budget to change")
+        old = node.attrs["remaining_eur"]
+        node.attrs["remaining_eur"] = budget_eur
+        event.set_model(model)
+        relaxed["budget_eur"] = budget_eur
+        was = f"EUR {old:g}" if isinstance(old, (int, float)) else "unknown"
+        log(event, "constraint", f"Budget left changed from {was} to EUR {budget_eur:g}", disruption=entry["id"])
+    if capacity_slack is not None:
+        if capacity_slack < 0:
+            raise OrchestratorError("the number of people placed elsewhere cannot be negative")
+        relaxed["capacity_slack"] = capacity_slack
+        log(event, "constraint", f"Accepts up to {capacity_slack} people in an overflow space", disruption=entry["id"])
+    scenarios = [Scenario.model_validate(s) for s in entry.get("scenarios", [])]
+    entry["scored"] = [x.to_dict() for x in score(scenarios, remaining_budget(event.model),
+                                                   relaxed.get("capacity_slack", 0))]
+    event.save()
+    return entry
+
+
+async def replan_with(event: Event, disruption_id: str, note: str, runner: Runner) -> dict[str, Any]:
+    """The organizer relaxes a limit only new options can use (e.g. another date): the Replanner runs again."""
+    entry = _entry(event, disruption_id)
+    if entry.get("coordinator") in ("done", "question"):
+        raise OrchestratorError(f"a scenario was already chosen for {entry['id']}")
+    if not entry.get("scenarios"):
+        raise OrchestratorError("this problem has no options to re-plan")
+    note = note.strip()
+    if not note:
+        raise OrchestratorError("say which limit to relax")
+    model = event.model
+    slice_ids = entry["routing"]["slices"].get("replanner") or sorted(entry["impact"]["effects"])
+    message = (replanner_message(model, slice_ids, entry["impact"]["effects"], entry["disruption"],
+                                 entry.get("candidates", []))
+               + f"\nNone of the earlier options fits all the organizer's limits. The organizer now allows: {note}. "
+                 "Propose 2 or 3 new options that use this.")
+    await runner.stage("agent_started", {"agent": "replanner"})
+    res = await runner.call(entry["fixture"], "replanner", message, thread_name=f"{entry['text']} · Replanner (relaxed)",
+                            name=f"replanner-relax-{slugify(note)[:40]}", extra={"relax": note})
+    add_cost(event, entry["id"], "replanner", res.cost)
+    if res.data is None:
+        raise OrchestratorError("the Replanner asked a question instead of proposing options")
+    entry["scenarios"] = [s.model_dump(mode="json") for s in res.data.scenarios]
+    entry["scored"] = [x.to_dict() for x in score(res.data.scenarios, remaining_budget(model),
+                                                   entry.get("relaxed", {}).get("capacity_slack", 0))]
+    entry["rejected"] = []
+    entry.setdefault("relaxed", {})["other"] = note
+    log(event, "constraint", f"Allows: {note} (new options prepared)", disruption=entry["id"])
+    event.save()
+    return entry
+
+
 def approve_messages(event: Event, ids: list[str]) -> list[dict[str, Any]]:
     """Mark outbox drafts as approved. Nothing is sent: export or copy happens in the UI."""
     wanted = set(ids)
@@ -776,5 +931,6 @@ def approve_messages(event: Event, ids: list[str]) -> list[dict[str, Any]]:
     for m in found:
         m["status"] = "approved"
         m["approved_at"] = now_iso()
+    log(event, "approval", f"Approved {len(found)} message{'s' if len(found) != 1 else ''}", messages=sorted(wanted))
     event.save()
     return found

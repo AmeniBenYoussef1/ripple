@@ -382,3 +382,28 @@ textarea:focus { outline: none; border-color: var(--raspberry); }
 .text-input:disabled { background: var(--bg); }
 .tech { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: var(--muted); }
 #outbox-card { scroll-margin-top: 20px; }
+
+/* ---- recovery plan, decisions, no-fit ---- */
+.progress { height: 8px; background: var(--bg); border-radius: 999px; overflow: hidden; }
+.progress span { display: block; height: 100%; background: var(--teal); border-radius: 999px; transition: width 0.4s ease; }
+.actions { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.actions li { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; transition: background 0.2s; }
+.actions li.done { background: var(--bg); }
+.actions li.done .action-title { text-decoration: line-through; color: var(--muted); }
+.check { flex: none; background: none; border: none; padding: 0; cursor: pointer; color: var(--muted); border-radius: 6px; }
+.actions li.done .check { color: var(--teal-dark); }
+.action-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.action-title { font-weight: 700; }
+.action-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.action-meta .tag { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
+.badge-soft { background: var(--bg); color: var(--muted); }
+.decisions ul { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.decisions li { display: flex; gap: 10px; }
+.decisions time { color: var(--muted); font-variant-numeric: tabular-nums; }
+.note-input { flex: 1 1 100%; resize: vertical; }
+.nofit { border-color: var(--coral); }
+.nofit-reasons { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.nofit-reasons li { padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+.relax-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.relax { display: flex; flex-direction: column; gap: 6px; background: var(--bg); border-radius: 12px; padding: 12px; font-size: 13px; font-weight: 600; }
+@media (max-width: 1180px) { .relax-grid { grid-template-columns: 1fr; } }

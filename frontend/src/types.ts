@@ -125,6 +125,10 @@ export interface Entry {
   scored?: Scored[];
   coordinator?: "waiting_for_choice" | "running" | "done" | "skipped" | "cached" | "question";
   coordinator_question?: Question[];
+  actions?: Action[];
+  decisions?: Decision[];
+  rejected?: string[];
+  relaxed?: { budget_eur?: number; capacity_slack?: number; other?: string };
   answers?: { answer: string; at: string }[];
   costs?: Record<string, string>;
   saved?: Record<string, Saved>;
@@ -147,6 +151,8 @@ export interface EventState {
   saved_total: string;
   files: string[];
   setup?: SetupInfo;
+  plans?: PlanVersion[];
+  log?: LogItem[];
   /** Replay only: what is recorded per problem (anything else is Live mode only). */
   replayable?: Record<string, { options: string[]; answers: string[] }> | null;
 }
@@ -190,4 +196,33 @@ export interface Venues {
   disruption: string | null;
   lost: { name: string; address?: string | null; lat: number | null; lon: number | null; note: string | null } | null;
   candidates: VenuePin[];
+}
+
+export interface Action {
+  id: string;
+  title: string;
+  description: string;
+  owner: string;
+  deadline: string;
+  priority: "high" | "medium" | "low";
+  status: "open" | "done";
+  done_at?: string | null;
+  source: string;
+}
+
+export interface Decision {
+  kind: "approved" | "changes_requested" | "rejected";
+  option: string | null;
+  note: string;
+  at: string;
+}
+
+export interface PlanVersion { version: number; at: string; title: string; disruption: string | null }
+
+export interface LogItem {
+  at: string;
+  kind: "setup" | "problem" | "decision" | "plan" | "constraint" | "approval" | "action" | "edit";
+  text: string;
+  disruption?: string;
+  [key: string]: unknown;
 }

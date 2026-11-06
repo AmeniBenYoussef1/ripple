@@ -108,6 +108,15 @@ class Candidate(BaseModel):
     lon: Optional[float] = None
 
 
+class Action(BaseModel):
+    """One step of the recovery plan, for the organizer's checklist (Coordinator output)."""
+    title: str
+    description: str = ""
+    owner: str = ""                          # a role or team from the files, e.g. "Volunteer lead"
+    deadline: str = ""                       # e.g. "07:30" or "before Friday"; taken from the plan
+    priority: str = "medium"                 # high | medium | low
+
+
 class OutboxMessage(BaseModel):
     group: str
     to: str

@@ -90,6 +90,14 @@ export const api = {
   },
   answer: (text: string, disruption?: string) =>
     call<{ status: string; outbox: Message[] }>(`${ev}/answer`, { method: "POST", body: JSON.stringify({ text, disruption }) }),
+  setAction: (id: string, done: boolean) =>
+    call<unknown>(`${ev}/actions/${encodeURIComponent(id)}`, { method: "POST", body: JSON.stringify({ done }) }),
+  decide: (did: string, kind: "changes_requested" | "rejected", option: string, note = "") =>
+    call<unknown>(`${ev}/problems/${encodeURIComponent(did)}/decision`, { method: "POST", body: JSON.stringify({ kind, option, note }) }),
+  relax: (did: string, body: { budget_eur?: number; capacity_slack?: number }) =>
+    call<{ scored: { feasible: boolean }[] }>(`${ev}/problems/${encodeURIComponent(did)}/relax`, { method: "POST", body: JSON.stringify(body) }),
+  replan: (did: string, note: string) =>
+    call<{ scored: { feasible: boolean }[] }>(`${ev}/problems/${encodeURIComponent(did)}/replan`, { method: "POST", body: JSON.stringify({ note }) }),
   confirmSetup: () => call<EventState>(`${ev}/setup/confirm`, { method: "POST" }),
   demoFiles: () => call<{ name: string; bytes: number }[]>("/api/demo-files"),
   demoFileUrl: (name: string) => `${API}/api/demo-files/${encodeURIComponent(name)}`,

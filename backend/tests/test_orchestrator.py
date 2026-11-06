@@ -323,3 +323,70 @@ def test_coordinator_question_then_answer(setup):
     assert Decimal(entry["costs"]["coordinator"]) == Decimal("0.03")   # question + answer
     with pytest.raises(OrchestratorError, match="no question"):
         run(answer_question(event, "Room B", runner))
+
+
+# ---- Part 3: recovery plan, decisions, plan versions, relaxed limits ----------------------
+
+def test_actions_fall_back_to_volunteer_tasks_and_can_be_ticked(setup):
+    from app.orchestrator import make_actions, set_action
+    out = {"messages": [], "volunteer_tasks": [{"who": "volunteer lead", "task": "Move the signs", "time": "07:30"}]}
+    acts = make_actions("d9", out)
+    assert acts == [{"id": "d9-a1", "title": "Move the signs", "description": "", "owner": "volunteer lead",
+                     "deadline": "07:30", "priority": "medium", "status": "open", "source": "volunteer task"}]
+    own = make_actions("d9", {"actions": [{"title": "Confirm the hall", "owner": "Organizer", "priority": "urgent"}]})
+    assert own[0]["source"] == "coordinator" and own[0]["priority"] == "medium"     # unknown priority -> medium
+    event, runner, _, _ = setup
+    run(handle_disruption(event, T1, runner))
+    FIX_OUT = event.data["history"][0]
+    FIX_OUT["actions"] = acts
+    a = set_action(event, "d9-a1", True)
+    assert a["status"] == "done" and a["done_at"]
+    assert event.data["log"][-1]["kind"] == "action"
+    with pytest.raises(OrchestratorError, match="unknown action"):
+        set_action(event, "nope", True)
+
+
+def test_decisions_reject_and_request_changes(setup):
+    from app.orchestrator import record_decision
+    event, runner, _, _ = setup
+    one = run(handle_disruption(event, T1, runner))
+    record_decision(event, one["id"], "changes_requested", "B", "Too far from the metro")
+    record_decision(event, one["id"], "rejected", "B", "")
+    entry = event.data["history"][0]
+    assert [d["kind"] for d in entry["decisions"]] == ["changes_requested", "rejected"]
+    assert entry["decisions"][0]["note"] == "Too far from the metro" and entry["decisions"][0]["at"]
+    with pytest.raises(OrchestratorError, match="was rejected"):
+        run(choose_scenario(event, "B", runner))
+    with pytest.raises(OrchestratorError, match="a decision is"):
+        record_decision(event, one["id"], "approved", "C")
+
+
+def test_approving_logs_a_decision_and_a_new_plan_version(setup):
+    event, runner, _, _ = setup
+    assert [p["version"] for p in event.data["plans"]] == [1]
+    run(handle_disruption(event, T1, runner))
+    run(choose_scenario(event, "B", runner))
+    entry = event.data["history"][0]
+    assert entry["decisions"][-1]["kind"] == "approved" and entry["decisions"][-1]["option"] == "B"
+    assert [p["version"] for p in event.data["plans"]] == [1, 2]
+    assert event.data["plans"][1]["disruption"] == entry["id"]
+    run(handle_disruption(event, T3, runner))           # informs people at once -> another version
+    assert len(event.data["plans"]) == 3
+    kinds = [l["kind"] for l in event.data["log"]]
+    assert kinds[:2] == ["setup", "problem"] and "decision" in kinds and kinds.count("plan") == 2
+
+
+def test_relax_capacity_and_budget_rescore_in_code(setup):
+    from app.orchestrator import relax_limits
+    event, runner, _, _ = setup
+    one = run(handle_disruption(event, T1, runner))
+    a = next(s for s in one["scored"] if s["id"] == "A")
+    assert not a["feasible"] and "capacity 160 for 200 people" in a["violations"][0]
+    entry = relax_limits(event, one["id"], capacity_slack=40)
+    assert next(s for s in entry["scored"] if s["id"] == "A")["feasible"]
+    entry = relax_limits(event, one["id"], budget_eur=0)
+    assert entry["relaxed"] == {"capacity_slack": 40, "budget_eur": 0}
+    assert next(n for n in event.model.nodes if n.id == "budget").attrs["remaining_eur"] == 0
+    assert [l["kind"] for l in event.data["log"]].count("constraint") == 2
+    with pytest.raises(OrchestratorError, match="negative"):
+        relax_limits(event, one["id"], budget_eur=-5)

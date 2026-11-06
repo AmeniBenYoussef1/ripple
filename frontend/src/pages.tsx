@@ -2,7 +2,7 @@
 import { CalendarDays, ChevronRight, Inbox, MapPin, Plus, RotateCcw, Server, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { API, EVENT_ID } from "./api";
-import { AgentsCard, LiveFeed, OutboxCard, PlanCard } from "./components/cards";
+import { AgentsCard, LiveFeed, OutboxCard, PlanCard, RecoveryPlan } from "./components/cards";
 import { useReport } from "./components/Shell";
 import { BehindTheScenes, ProblemSummary } from "./components/summary";
 import { VenueCard } from "./components/VenueMap";
@@ -125,6 +125,7 @@ export function WorkspacePage() {
           <div className="row wrap">
             {view ? <Pill tone="alert">Problem {number}</Pill> : <Pill tone="ok">No problem reported</Pill>}
             {st && <Pill tone={st.tone}>{st.text}</Pill>}
+            {(state.plans?.length ?? 0) > 0 && <Pill tone="info">Plan v{state.plans!.length}</Pill>}
           </div>
           <h1>{view ? view.text : "Event workspace"}</h1>
           {view?.disruption?.detail && <p className="sub">{view.disruption.detail}</p>}
@@ -163,7 +164,7 @@ export function WorkspacePage() {
             } />
           <RippleMap model={state.model} impact={view?.impact} resolved={view?.coordinator === "done" && !busy} animateKey={view?.id ?? "none"} />
         </section>
-        <div className="span-7 col">{view && <PlanCard view={view} onNewProblem={rep.show} />}{view && <VenueCard view={view} />}</div>
+        <div className="span-7 col">{view && <PlanCard view={view} onNewProblem={rep.show} />}{view && <RecoveryPlan view={view} />}{view && <VenueCard view={view} />}</div>
         <div className="span-5 col">{view && <OutboxCard view={view} />}</div>
         <div className="span-12"><BehindTheScenes view={view} /></div>
       </div>

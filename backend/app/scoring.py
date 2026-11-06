@@ -51,9 +51,10 @@ class ScoredScenario:
         }
 
 
-def hard_violations(s: Scenario, remaining_budget: float | None) -> list[str]:
+def hard_violations(s: Scenario, remaining_budget: float | None, capacity_slack: int = 0) -> list[str]:
+    """capacity_slack: how many people the organizer accepts to place elsewhere (a relaxed limit)."""
     v = []
-    if s.capacity is not None and s.attendees is not None and s.capacity < s.attendees:
+    if s.capacity is not None and s.attendees is not None and s.capacity < s.attendees - capacity_slack:
         v.append(f"capacity {s.capacity} for {s.attendees} people")
     if s.extra_cost_eur is not None and remaining_budget is not None and s.extra_cost_eur > remaining_budget:
         v.append(f"extra cost EUR {s.extra_cost_eur:g} over remaining budget EUR {remaining_budget:g}")
@@ -68,10 +69,11 @@ def burden_per_person(minutes: int, must_replan: bool) -> int:
     return max(minutes, REPLAN_MINUTES) if must_replan else minutes
 
 
-def score(scenarios: list[Scenario], remaining_budget: float | None = None) -> list[ScoredScenario]:
+def score(scenarios: list[Scenario], remaining_budget: float | None = None,
+          capacity_slack: int = 0) -> list[ScoredScenario]:
     scored: list[ScoredScenario] = []
     for s in scenarios:
-        viol = hard_violations(s, remaining_budget)
+        viol = hard_violations(s, remaining_budget, capacity_slack)
         worst_group, worst, total = None, 0, 0
         for b in s.burdens:
             per = burden_per_person(b.minutes, b.must_replan)
