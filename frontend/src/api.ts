@@ -49,7 +49,8 @@ export function friendlyError(status: number, detail: string): string {
   if (detail.includes("no question")) return "There is no open question to answer.";
   if (detail.includes("unknown event")) return "This event could not be found. Reload the page.";
   if (detail.includes("unknown message ids")) return "Some of these messages no longer exist. Reload the page.";
-  if (/at most \d+ files|only CSV|10 MB|is empty|add your event files|write an answer/.test(detail)) {
+  // checks written in plain words on the server: show them as they are
+  if (/at most \d+ files|only CSV|10 MB|is empty|add your event files|write an answer|cannot be negative|must be positive|pick a session|a delay is between|has no budget|only drafts can be edited|needs a subject|say which limit|was rejected|no options to re-plan/.test(detail)) {
     return detail.charAt(0).toUpperCase() + detail.slice(1) + ".";
   }
   return "Something went wrong. The details are in Behind the scenes.";

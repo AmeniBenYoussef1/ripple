@@ -173,7 +173,7 @@ export interface SetupInfo {
 }
 
 export type AgentName = "impact_analyst" | "resource_finder" | "replanner" | "coordinator";
-export type AgentStatus = "idle" | "waiting" | "working" | "done" | "skipped" | "cached";
+export type AgentStatus = "idle" | "waiting" | "working" | "done" | "skipped" | "cached" | "failed";
 
 export interface AgentView {
   status: AgentStatus;

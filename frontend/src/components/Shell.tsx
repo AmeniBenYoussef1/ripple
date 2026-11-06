@@ -1,5 +1,5 @@
 // Sidebar, the stats bar and the "Report a problem" dialog.
-import { FileUp, FlaskConical, Home, Inbox, LayoutDashboard, Settings, X, Zap } from "lucide-react";
+import { FileUp, FlaskConical, History, Home, Inbox, LayoutDashboard, Settings, X, Zap } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useRipple } from "../store";
@@ -24,6 +24,7 @@ export function Sidebar() {
     { to: "/event", label: "Event workspace", icon: <LayoutDashboard size={18} /> },
     { to: "/whatif", label: "What-if", icon: <FlaskConical size={18} /> },
     { to: "/outbox", label: "Outbox", icon: <Inbox size={18} />, badge: drafts || undefined },
+    { to: "/history", label: "History", icon: <History size={18} /> },
     { to: "/settings", label: "Settings", icon: <Settings size={18} /> },
   ];
   return (

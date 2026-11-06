@@ -7,7 +7,7 @@ import type { AgentName, Entry, EventState, View } from "./types";
 import { AGENT_KEY, AGENTS, applyStream, entryToView, plainStep, startView } from "./view";
 
 const STREAM_TYPES = ["started", "agent", "agent_started", "cost", "impact", "routing", "candidates",
-  "scenarios", "saved", "outbox", "questions", "coordinator_question", "done", "error"];
+  "scenarios", "saved", "outbox", "questions", "coordinator_question", "agent_failed", "done", "error"];
 
 export interface FeedItem {
   at: number | null;          // null = rebuilt from the saved entry (no live timestamp)
@@ -92,8 +92,10 @@ function feedLine(type: string, d: Record<string, any>): FeedItem | null {
       return { at, kind: "draft", text: `${plural(d.outbox.length, "message")} ready for your review` };
     case "questions":
       return { at, kind: "finding", text: "The Impact Analyst asked a question instead of guessing" };
+    case "agent_failed":   // plain words only; the technical text is in Behind the scenes
+      return { at, kind: "error", text: `${title(d.agent)} stopped: ${d.reason}` };
     case "error":
-      return { at, kind: "error", text: d.message };
+      return null;
     default:
       return null;
   }
@@ -176,6 +178,7 @@ export function RippleProvider({ children }: { children: ReactNode }) {
       if (type === "cost") {
         setState((s) => s && { ...s, total_cost: d.total, costs: [...s.costs, { disruption: id, agent: d.agent, cost: d.cost }] });
       }
+      if (type === "agent_failed") setErrorDetail(d.detail);
       if (type === "error") {
         setError(friendlyError(500, d.message));
         setErrorDetail(d.message);
@@ -193,6 +196,7 @@ export function RippleProvider({ children }: { children: ReactNode }) {
     setPending(what);
     setBusy(true);
     let result: T | null = null;
+    let failed = false;
     busyRef.current = true;
     if (startLive) {
       liveId.current = startLive.id;
@@ -201,6 +205,7 @@ export function RippleProvider({ children }: { children: ReactNode }) {
     try {
       result = await work();
     } catch (e) {
+      failed = true;
       fail(e);
     } finally {
       busyRef.current = false;
@@ -216,7 +221,8 @@ export function RippleProvider({ children }: { children: ReactNode }) {
       } catch (e) {
         fail(e);
       }
-      setLive(null);
+      // after a failure, keep the run on screen so the organizer sees which agent failed and why
+      if (!failed) setLive(null);
     }
     return result;
   }, [refresh, fail]);
@@ -228,7 +234,7 @@ export function RippleProvider({ children }: { children: ReactNode }) {
 
   const store: Store = useMemo(() => ({
     state, view, selected, busy, error, errorDetail, feed, timing, notice, pending,
-    select: setSelected,
+    select: (id: string) => { setLive(null); setSelected(id); },
     clearError: () => setError(null),
     clearNotice: () => setNotice(null),
     report: async (text: string) => {

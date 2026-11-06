@@ -173,6 +173,17 @@ class Runner:
     async def call(self, slug: str, agent: str, message: str, *, thread_name: str,
                    file_ids: Optional[list[str]] = None, check=None, name: Optional[str] = None,
                    thread_id: Optional[str] = None, extra: Optional[dict] = None) -> AgentResult:
+        try:
+            return await self._call(slug, agent, message, thread_name=thread_name, file_ids=file_ids, check=check,
+                                    name=name, thread_id=thread_id, extra=extra)
+        except Exception as err:   # tell the UI which agent failed, in plain words, then let the caller handle it
+            await self.stage("agent_failed", {"agent": "impact_analyst" if agent == "setup_analyst" else agent,
+                                              "reason": failure_reason(err), "detail": f"{type(err).__name__}: {err}"})
+            raise
+
+    async def _call(self, slug: str, agent: str, message: str, *, thread_name: str,
+                    file_ids: Optional[list[str]] = None, check=None, name: Optional[str] = None,
+                    thread_id: Optional[str] = None, extra: Optional[dict] = None) -> AgentResult:
         key, shape, max_steps = SPEC[agent]
         path = self._fixture(slug, name or agent)   # name: e.g. "coordinator-B", one recording per option
         if self.demo or (self.prefer_recordings and path.exists()):
@@ -226,6 +237,23 @@ class Runner:
         if self.demo or self.client is None:
             return []
         return [(await self.client.chat.upload_file(p)).id for p in paths]
+
+
+def failure_reason(err: Exception) -> str:
+    """Why an agent failed, for the organizer (the technical text goes to Behind the scenes)."""
+    name = type(err).__name__
+    text = str(err)
+    if "no recording" in text:
+        return "This step wasn't recorded, so it works in Live mode only."
+    if name == "AgentOutputError":
+        return "Its answer couldn't be read, even after asking again."
+    if name == "RateLimitError":
+        return "The AI platform is busy. Try again in a minute."
+    if name in ("AuthError", "PermissionError"):
+        return "Ripple couldn't sign in to the AI platform."
+    if name in ("APIConnectionError", "StreamInterrupted", "ServerError"):
+        return "The connection to the AI platform was lost. Try again."
+    return "Something went wrong while it worked. Try again."
 
 
 # ---- Small model helpers (no hard-coded ids) ---------------------------------------

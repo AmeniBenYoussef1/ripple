@@ -29,12 +29,15 @@ export function VenueCard({ view }: { view: View }) {
   const { busy } = useRipple();
   const [data, setData] = useState<Venues | null>(null);
   const [error, setError] = useState(false);
+  const [loading, setLoading] = useState(false);
   const hasCandidates = (view.candidates ?? []).length > 0;
 
   useEffect(() => {
     if (!hasCandidates || busy) return;   // the venue list is saved when the run ends
     let alive = true;
-    api.venues(view.id).then((d) => alive && setData(d)).catch(() => alive && setError(true));
+    setLoading(true);
+    api.venues(view.id).then((d) => alive && setData(d)).catch(() => alive && setError(true))
+      .finally(() => alive && setLoading(false));
     return () => { alive = false; };
   }, [view.id, hasCandidates, busy]);
 
@@ -76,6 +79,7 @@ export function VenueCard({ view }: { view: View }) {
           </MapContainer>
         </div>
       )}
+      {loading && !data && <p className="sub"><span className="spinner" aria-hidden="true" /> Placing the venues on the map…</p>}
       {data?.lost?.note && <p className="fine">{data.lost.name} (cancelled): {data.lost.note}.</p>}
       {error && <p className="fine">The map could not be loaded. The venue list below still works.</p>}
       <ol className="venue-list">

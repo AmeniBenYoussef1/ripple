@@ -390,3 +390,19 @@ def test_relax_capacity_and_budget_rescore_in_code(setup):
     assert [l["kind"] for l in event.data["log"]].count("constraint") == 2
     with pytest.raises(OrchestratorError, match="negative"):
         relax_limits(event, one["id"], budget_eur=-5)
+
+
+def test_a_failing_agent_is_announced_in_plain_words(setup):
+    from app.orchestrator import failure_reason
+    event, runner, _, _ = setup
+    stages = []
+    runner.on_stage = lambda name, payload: stages.append((name, payload))
+    with pytest.raises(OrchestratorError):
+        run(handle_disruption(event, "The caterer went bankrupt.", runner))
+    failed = [p for n, p in stages if n == "agent_failed"]
+    assert failed and failed[0]["agent"] == "impact_analyst"
+    assert failed[0]["reason"] == "This step wasn't recorded, so it works in Live mode only."
+    assert "no recording" in failed[0]["detail"]
+    from app.agents import AgentOutputError
+    assert "couldn't be read" in failure_reason(AgentOutputError("bad json"))
+    assert failure_reason(ValueError("x")) == "Something went wrong while it worked. Try again."

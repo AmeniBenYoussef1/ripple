@@ -126,6 +126,16 @@ export function applyStream(view: View, type: string, data: Record<string, any>)
       v.questions = data.questions;
       set("impact_analyst", "done", "Asked you a question instead of guessing");
       break;
+    case "agent_failed": {
+      const name = data.agent as AgentName;
+      if (v.agents[name]) set(name, "failed", data.reason);
+      for (const { name: other } of AGENTS) {   // agents that never started are not "waiting" any more
+        if (other !== name && (v.agents[other].status === "waiting" || v.agents[other].status === "working")) {
+          set(other, "idle", "Not started: an earlier step failed");
+        }
+      }
+      break;
+    }
     case "coordinator_question":
       v.coordinator = "question";
       v.coordinator_question = data.questions;

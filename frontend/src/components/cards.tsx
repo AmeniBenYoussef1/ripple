@@ -1,6 +1,6 @@
 // Workspace cards: agents, live updates, proposed plan, outbox.
 import {
-  Ban, ClipboardCheck, MessageSquareWarning, Square, SquareCheckBig,
+  Ban, ClipboardCheck, OctagonAlert, MessageSquareWarning, Square, SquareCheckBig,
   Activity, ArrowRightLeft, CalendarClock, CheckCircle2, ChevronDown, Clock, Coins, Copy, Download,
   ExternalLink, FileSpreadsheet, FileText, Inbox, Loader2, MinusCircle, Moon, Radar, RotateCcw, Search,
   Send, Sparkles, TriangleAlert, Users, X,
@@ -29,6 +29,7 @@ function StatusChip({ a }: { a: AgentView }) {
     cached: [<RotateCcw size={14} />, "Cached"],
     waiting: [<Clock size={14} />, "Waiting"],
     idle: [<Moon size={14} />, "Asleep"],
+    failed: [<OctagonAlert size={14} />, "Failed"],
   };
   const [icon, text] = map[a.status];
   return <span className={`chip chip-${a.status}`}>{icon}{text}</span>;

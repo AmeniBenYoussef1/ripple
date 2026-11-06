@@ -5,6 +5,7 @@ import { Sidebar } from "./components/Shell";
 import { HomePage, OutboxPage, SettingsPage, WorkspacePage } from "./pages";
 import { SetupPage } from "./SetupPage";
 import { WhatIfPage } from "./WhatIfPage";
+import { HistoryPage } from "./HistoryPage";
 import { RippleProvider, useRipple } from "./store";
 
 function Layout() {
@@ -41,13 +42,20 @@ function Layout() {
           </div>
         )}
         {!state ? (
-          <div className="loading">{error ? "" : "Loading Ripple…"}</div>
+          error ? (
+            <div className="page"><section className="card load-error">
+              <h2>Ripple can't open your event</h2>
+              <p className="sub">The server may be stopped or restarting. Your data is safe: nothing was changed.</p>
+              <button type="button" className="btn btn-primary" onClick={() => location.reload()}>Try again</button>
+            </section></div>
+          ) : <div className="loading"><span className="spinner" aria-hidden="true" />Loading Ripple…</div>
         ) : (
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/setup" element={<SetupPage />} />
             <Route path="/event" element={<WorkspacePage />} />
             <Route path="/whatif" element={<WhatIfPage />} />
+            <Route path="/history" element={<HistoryPage />} />
             <Route path="/outbox" element={<OutboxPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
