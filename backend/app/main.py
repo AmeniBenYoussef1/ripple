@@ -10,6 +10,7 @@ Live progress goes to GET /api/events/{id}/stream as Server-Sent Events:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import io
 import json
 import os
@@ -45,6 +46,7 @@ RECORDINGS = Path(__file__).resolve().parents[1] / "recordings"   # Live recordi
 SAMPLE_PACK = Path(__file__).resolve().parents[1] / "sample_pack"   # fictional files visitors can download
 PUBLIC = os.environ.get("RIPPLE_PUBLIC", "false").strip().lower() in ("1", "true", "yes")
 COOKIE = "ripple_visitor"
+OWNER_COOKIE = "ripple_owner"
 # Plain words for agent failures on the visitor's own files and problems
 NOT_AN_EVENT = ("Ripple couldn't find an event in these files: no groups of people, schedule or venue. "
                 "Upload your participant list, schedule, contracts or budget, or try a sample event.")
@@ -67,6 +69,10 @@ def replay_delay_from_env() -> tuple[float, float]:
 
 
 # ---- Request bodies -------------------------------------------------------------
+
+
+class OwnerBody(BaseModel):
+    token: str = ""
 
 
 class SetupBody(BaseModel):
@@ -163,7 +169,8 @@ def create_app(events_dir: Path = EVENTS, fixtures_dir: Path = FIXTURES, model_p
                demo: Optional[bool] = None, replay_delay: Optional[tuple[float, float]] = None,
                geocoder: Optional[Geocoder] = None, recordings_dir: Path = RECORDINGS,
                replay_events: Optional[set[str]] = None, public: Optional[bool] = None,
-               visitors: Optional[Visitors] = None, client: Any = None) -> FastAPI:
+               visitors: Optional[Visitors] = None, client: Any = None,
+               owner_token: Optional[str] = None) -> FastAPI:
     demo = demo_mode() if demo is None else demo
     replay_delay = replay_delay_from_env() if replay_delay is None else replay_delay
     replay_events = REPLAY_EVENTS if replay_events is None else replay_events
@@ -204,7 +211,10 @@ def create_app(events_dir: Path = EVENTS, fixtures_dir: Path = FIXTURES, model_p
             yield
 
     app = FastAPI(title="Ripple API", lifespan=lifespan)
-    app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], allow_credentials=True,
+    # the deployed frontend's address goes in RIPPLE_CORS_ORIGINS (comma-separated)
+    origins = ["http://localhost:5173"] + [o.strip().rstrip("/") for o in
+                                           os.environ.get("RIPPLE_CORS_ORIGINS", "").split(",") if o.strip()]
+    app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True,
                        allow_methods=["*"], allow_headers=["*"])
     last_cleanup = [time.time()]
 
@@ -217,6 +227,7 @@ def create_app(events_dir: Path = EVENTS, fixtures_dir: Path = FIXTURES, model_p
             vid = fresh = secrets.token_hex(16)
         request.state.visitor = vid
         request.state.ip = request.client.host if request.client else "unknown"
+        request.state.owner = is_owner(request)
         if request.method == "OPTIONS":                         # CORS preflights carry no cookie
             return await call_next(request)
         m = re.match(r"^/api/events/([^/]+)", request.url.path)
@@ -232,11 +243,26 @@ def create_app(events_dir: Path = EVENTS, fixtures_dir: Path = FIXTURES, model_p
             visitors.cleanup(events_dir, recordings_dir)
         response = await call_next(request)
         if fresh:
-            # frontend and backend on different sites (e.g. Vercel + Render) need SameSite=None; Secure
-            cross = os.environ.get("RIPPLE_CROSS_SITE_COOKIE", "false").lower() == "true"
-            response.set_cookie(COOKIE, vid, max_age=30 * 24 * 3600, httponly=True,
-                                samesite="none" if cross else "lax", secure=cross)
+            set_cookie(response, COOKIE, vid)
         return response
+
+    def set_cookie(response: Response, name: str, value: str) -> None:
+        # frontend and backend on different sites (e.g. Vercel + Render) need SameSite=None; Secure
+        cross = os.environ.get("RIPPLE_CROSS_SITE_COOKIE", "false").lower() == "true"
+        response.set_cookie(name, value, max_age=30 * 24 * 3600, httponly=True,
+                            samesite="none" if cross else "lax", secure=cross)
+
+    # -- the owner (RIPPLE_OWNER_TOKEN): skips the visitor limits, with a daily cap of their own.
+    # The cookie holds a hash of the token, never the token itself. Off when the variable is unset.
+    token = owner_token if owner_token is not None else os.environ.get("RIPPLE_OWNER_TOKEN", "")
+    owner_mark = hashlib.sha256(f"ripple-owner|{token}".encode()).hexdigest() if token else ""
+
+    def is_owner(request: Request) -> bool:
+        if not token:
+            return False
+        header = request.headers.get("x-ripple-owner", "")
+        cookie = request.cookies.get(OWNER_COOKIE, "")
+        return secrets.compare_digest(header, token) or secrets.compare_digest(cookie, owner_mark)
 
     def live_gate(request: Request, event_id: str, kind: str) -> bool:
         """Before agents run for real: limits for visitors; nothing live on shared events in public.
@@ -247,7 +273,8 @@ def create_app(events_dir: Path = EVENTS, fixtures_dir: Path = FIXTURES, model_p
             raise HTTPException(403, "live-off|Live mode is off on this server, so Ripple can only replay "
                                      "recorded events. Try a sample event.")
         if is_visitor_event(event_id):
-            why = visitors.refusal(request.state.visitor, request.state.ip, kind)
+            why = (visitors.owner_refusal() if request.state.owner
+                   else visitors.refusal(request.state.visitor, request.state.ip, kind))
             if why:
                 raise HTTPException(429, "limit|" + why)
             return True
@@ -267,9 +294,10 @@ def create_app(events_dir: Path = EVENTS, fixtures_dir: Path = FIXTURES, model_p
             return result
         finally:
             spent = total_cost(get_event(event_id)) - before
-            visitors.add_cost(max(spent, Decimal(0)) if kind != "analyses" else total_cost(get_event(event_id)))
+            visitors.add_cost(max(spent, Decimal(0)) if kind != "analyses" else total_cost(get_event(event_id)),
+                              owner=request.state.owner)
             reopened = isinstance(result, dict) and result.get("reopened")
-            if kind in ("analyses", "problems") and not reopened:
+            if kind in ("analyses", "problems") and not reopened and not request.state.owner:
                 visitors.count(request.state.visitor, request.state.ip, kind)
     broker = Broker()
     geo = geocoder or Geocoder()
@@ -344,9 +372,20 @@ def create_app(events_dir: Path = EVENTS, fixtures_dir: Path = FIXTURES, model_p
 
     @app.get("/api/visitor/status")
     async def visitor_status(request: Request) -> dict[str, Any]:
-        return {"public": public, "live": app.state.client is not None,
-                **visitors.status(request.state.visitor, request.state.ip),
-                "events": visitors.events_of(request.state.visitor)}
+        st = visitors.status(request.state.visitor, request.state.ip)
+        if request.state.owner:     # no visitor limits; only the owner's own cap
+            st.update(analyses_left=None, problems_left=None, budget_left=visitors.owner_refusal() is None)
+        return {"public": public, "live": app.state.client is not None, "owner": request.state.owner,
+                **st, "events": visitors.events_of(request.state.visitor)}
+
+    @app.post("/api/visitor/owner")
+    async def visitor_owner(body: OwnerBody) -> Response:
+        """/start?owner=<token> calls this once; a wrong token looks like nothing happened."""
+        if not token or not secrets.compare_digest(body.token, token):
+            return JSONResponse({"owner": False})
+        response = JSONResponse({"owner": True})
+        set_cookie(response, OWNER_COOKIE, owner_mark)
+        return response
 
     @app.post("/api/visitor/event")
     async def visitor_event(request: Request, body: Optional[SetupBody] = None) -> dict[str, Any]:

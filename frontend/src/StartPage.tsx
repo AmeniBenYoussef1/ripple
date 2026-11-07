@@ -36,7 +36,13 @@ export function StartPage() {
   const [made, setMade] = useState<EventState | null>(null);
   const input = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { api.visitorStatus().then(setStatus).catch(() => setStatus(null)); }, []);
+  useEffect(() => {
+    // /start?owner=<token>: hand the token to the server once, then drop it from the address bar
+    const token = new URLSearchParams(window.location.search).get("owner");
+    if (token) window.history.replaceState(null, "", window.location.pathname);
+    (token ? api.ownerToken(token).catch(() => undefined) : Promise.resolve())
+      .then(() => api.visitorStatus()).then(setStatus).catch(() => setStatus(null));
+  }, []);
 
   const maxMb = status?.max_file_mb ?? 5;
   const problem = (f: File) => (!OK.includes(ext(f.name)) ? "Not supported" : f.size === 0 ? "Empty"
@@ -221,6 +227,7 @@ export function StartPage() {
               <span className="sub tries">
                 {status === null ? "" : !status.live ? "Live agents are off on this server: sample events only."
                   : !status.budget_left ? "Today's free live tries are used up: sample events only."
+                  : status.analyses_left === null ? ""
                   : `Live tries left today: ${status.analyses_left} file analysis, ${status.problems_left} problems.`}
               </span>
               <button type="button" className="btn btn-primary btn-lg" disabled={!canStart} onClick={start}>

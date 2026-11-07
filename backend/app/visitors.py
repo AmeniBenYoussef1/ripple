@@ -38,6 +38,7 @@ class Limits:
     budget_usd: Decimal = Decimal("2")   # all visitors together, per day
     ttl_hours: float = 24      # visitor events are deleted after this
     max_file_mb: float = 5
+    owner_budget_usd: Decimal = Decimal("5")   # the owner's own daily cap (see RIPPLE_OWNER_TOKEN)
 
     @classmethod
     def from_env(cls) -> "Limits":
@@ -45,7 +46,8 @@ class Limits:
         return cls(analyses=int(env("RIPPLE_VISITOR_ANALYSES", "1")), problems=int(env("RIPPLE_VISITOR_PROBLEMS", "5")),
                    budget_usd=Decimal(env("RIPPLE_DAILY_BUDGET_USD", "2")),
                    ttl_hours=float(env("RIPPLE_VISITOR_TTL_HOURS", "24")),
-                   max_file_mb=float(env("RIPPLE_VISITOR_MAX_FILE_MB", "5")))
+                   max_file_mb=float(env("RIPPLE_VISITOR_MAX_FILE_MB", "5")),
+                   owner_budget_usd=Decimal(env("RIPPLE_OWNER_BUDGET_USD", "5")))
 
 
 @dataclass
@@ -69,7 +71,7 @@ class Visitors:
     def _roll(self) -> None:
         """A new day: counts and spending start over."""
         if self.data.get("day") != self.today():
-            self.data.update(day=self.today(), spent="0", visitors={}, ips={})
+            self.data.update(day=self.today(), spent="0", owner_spent="0", visitors={}, ips={})
             self._save()
 
     def ip_key(self, ip: str) -> str:
@@ -105,11 +107,24 @@ class Visitors:
         i[kind] += 1
         self._save()
 
-    def add_cost(self, amount: Decimal) -> None:
+    def add_cost(self, amount: Decimal, owner: bool = False) -> None:
+        """Every live run counts in the day's total; the owner's runs also count against the owner's cap."""
         if amount > 0:
             self._roll()
             self.data["spent"] = str(Decimal(self.data["spent"]) + amount)
+            if owner:
+                self.data["owner_spent"] = str(Decimal(self.data.get("owner_spent", "0")) + amount)
             self._save()
+
+    def owner_spent(self) -> Decimal:
+        self._roll()
+        return Decimal(self.data.get("owner_spent", "0"))
+
+    def owner_refusal(self) -> Optional[str]:
+        """The owner skips the visitor limits but has a daily cap of their own."""
+        if self.owner_spent() >= self.limits.owner_budget_usd:
+            return "Today's owner budget for live runs is used up. Sample events still replay."
+        return None
 
     def status(self, visitor: str, ip: str) -> dict:
         v, i = self._counts(visitor, ip)

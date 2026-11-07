@@ -55,7 +55,7 @@ class FakeChat:
         return self._run()
 
 
-def make(tmp_path, reply=None, **limits):
+def make(tmp_path, reply=None, owner_token="", **limits):
     for env in ("COMINTY_AGENT_IMPACT", "COMINTY_AGENT_FINDER", "COMINTY_AGENT_REPLANNER", "COMINTY_AGENT_COORDINATOR"):
         import os
         os.environ[env] = "agent"
@@ -63,7 +63,7 @@ def make(tmp_path, reply=None, **limits):
     visitors = Visitors(tmp_path / "usage.json", Limits(**limits))
     app = create_app(events_dir=tmp_path / "events", fixtures_dir=FIXTURES, model_path=GENERATED_MODEL, demo=False,
                      replay_delay=(0, 0), recordings_dir=tmp_path / "recordings", public=True,
-                     visitors=visitors, client=SimpleNamespace(chat=chat))
+                     visitors=visitors, client=SimpleNamespace(chat=chat), owner_token=owner_token)
     return app, chat, visitors
 
 
@@ -214,3 +214,37 @@ def test_cors_preflight_on_a_visitor_event_passes_without_a_cookie(tmp_path):
         r = browser.options(f"/api/events/{eid}/setup/confirm", headers={
             "Origin": "http://localhost:5173", "Access-Control-Request-Method": "POST"})
         assert r.status_code == 200 and r.headers["access-control-allow-origin"] == "http://localhost:5173"
+
+
+# ---- the owner -------------------------------------------------------------------------------
+
+def test_owner_skips_visitor_limits_but_has_an_own_cap(tmp_path):
+    app, chat, visitors = make(tmp_path, owner_token="s3cret-owner", analyses=0, problems=0,
+                               budget_usd=Decimal("0"), owner_budget_usd=Decimal("0.01"))
+    with TestClient(app) as c:
+        assert c.post("/api/visitor/owner", json={"token": "wrong"}).json() == {"owner": False}
+        assert "ripple_owner" not in c.cookies
+        assert c.post("/api/visitor/owner", json={"token": "s3cret-owner"}).json() == {"owner": True}
+        assert c.cookies["ripple_owner"] != "s3cret-owner"                    # a hash, never the token
+        st = c.get("/api/visitor/status").json()
+        assert st["owner"] is True and st["analyses_left"] is None and st["budget_left"] is True
+        eid = c.post("/api/visitor/event").json()["event_id"]
+        assert c.post(f"/api/events/{eid}/analyze", files=upload()).status_code == 200   # visitor limits are 0
+        assert visitors.spent() == Decimal("0.01") and visitors.owner_spent() == Decimal("0.01")  # both totals
+        r = c.post(f"/api/events/{eid}/disruptions", json={"text": "The venue cancelled."})
+        assert r.status_code == 429 and "owner budget" in r.json()["detail"]   # the owner's own cap
+    with TestClient(app) as stranger:                                          # no cookie: a normal visitor
+        eid = stranger.post("/api/visitor/event").json()["event_id"]
+        assert stranger.post(f"/api/events/{eid}/analyze", files=upload()).status_code == 429
+
+
+def test_owner_header_works_and_is_off_without_a_token(tmp_path):
+    app, _, _ = make(tmp_path, owner_token="s3cret-owner", analyses=0)
+    with TestClient(app) as c:
+        eid = c.post("/api/visitor/event").json()["event_id"]
+        r = c.post(f"/api/events/{eid}/analyze", files=upload(), headers={"X-Ripple-Owner": "s3cret-owner"})
+        assert r.status_code == 200
+    app, _, _ = make(tmp_path / "off", owner_token="")
+    with TestClient(app) as c:
+        assert c.post("/api/visitor/owner", json={"token": ""}).json() == {"owner": False}
+        assert c.get("/api/visitor/status").json()["owner"] is False

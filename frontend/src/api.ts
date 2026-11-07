@@ -155,6 +155,7 @@ export const api = {
   createEvent: (id: string, title: string) =>
     call<EventState>(`/api/events/${encodeURIComponent(id)}/create`, { method: "POST", body: JSON.stringify({ title }) }),
   visitorStatus: () => call<VisitorStatus>("/api/visitor/status"),
+  ownerToken: (token: string) => call<{ owner: boolean }>("/api/visitor/owner", { method: "POST", body: JSON.stringify({ token }) }),
   visitorEvent: (title: string) => call<EventState>("/api/visitor/event", { method: "POST", body: JSON.stringify({ title }) }),
   visitorSample: () => call<EventState>("/api/visitor/sample", { method: "POST" }),
   samplePackUrl: () => `${API}/api/sample-pack.zip`,
@@ -168,8 +169,9 @@ export const api = {
 export interface VisitorStatus {
   public: boolean;
   live: boolean;            // Live agents available on this server
-  analyses_left: number;
-  problems_left: number;
+  analyses_left: number | null;   // null: no visitor limit applies
+  problems_left: number | null;
+  owner?: boolean;
   budget_left: boolean;
   max_file_mb: number;
   ttl_hours: number;
