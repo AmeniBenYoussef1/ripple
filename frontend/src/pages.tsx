@@ -1,7 +1,6 @@
 // The four pages: Home, Event workspace, Outbox, Settings.
 import { CalendarDays, ChevronRight, Inbox, MapPin, Plus, RotateCcw, Server, Sun, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { API, getEvent } from "./api";
 import { AgentsCard, LiveFeed, OutboxCard, PlanCard, RecoveryPlan } from "./components/cards";
 import { useReport } from "./components/Shell";
 import { BehindTheScenes, ProblemSummary } from "./components/summary";
@@ -54,7 +53,7 @@ export function HomePage() {
           <path d="M0 150 C 140 110, 260 190, 380 150 S 540 110, 600 140 L600 200 L0 200 Z" fill="url(#wave)" />
         </svg>
         <div className="banner-text">
-          <h1>{greeting()}, Ameni</h1>
+          <h1>{greeting()}</h1>
           <p>Drop one problem. Watch the ripple.</p>
           <button type="button" className="btn btn-primary btn-lg" onClick={rep.show} disabled={busy}><Plus size={18} />Report a problem</button>
         </div>
@@ -210,10 +209,7 @@ export function SettingsPage() {
           <CardHead icon={<Server size={18} />} title="Agents" />
           <dl className="meta">
             <dt>Mode</dt><dd>{state.demo_mode ? "Replay: recorded agent runs, no Cominty credits used" : "Live: Cominty agents"}</dd>
-            <dt>Change it</dt><dd>Set <code>DEMO_MODE</code> in <code>backend/.env</code>, then restart the server</dd>
             <dt>Venue search area</dt><dd>{state.search_area || "not set"}</dd>
-            <dt>API</dt><dd>{API}</dd>
-            <dt>Event id</dt><dd>{getEvent()}</dd>
           </dl>
         </section>
         <section className="card">

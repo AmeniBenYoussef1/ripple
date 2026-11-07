@@ -11,7 +11,7 @@ import { api } from "../api";
 import { useRipple } from "../store";
 import type { FeedItem } from "../store";
 import type { AgentName, AgentView, Candidate, Message, Scenario, Scored, View } from "../types";
-import { AGENT_SUBTITLE, AGENTS, labelOf, plainStep, sizeOf } from "../view";
+import { AGENT_SUBTITLE, AGENTS, humanDates, labelOf, plainStep, sizeOf } from "../view";
 import { CardHead, Donut, duration } from "./ui";
 
 const AGENT_ICON: Record<AgentName, ReactNode> = {
@@ -97,7 +97,7 @@ export function LiveFeed({ items }: { items: FeedItem[] }) {
               <span className="feed-ic">{FEED_ICON[it.kind]}</span>
               <span className="feed-text">{it.text}</span>
               <time className="feed-time">
-                {it.at ? new Date(it.at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "summary"}
+                {it.at ? new Date(it.at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—"}
               </time>
             </li>
           ))}
@@ -431,11 +431,11 @@ export function RecoveryPlan({ view }: { view: View }) {
                   {a.status === "done" ? <SquareCheckBig size={20} /> : <Square size={20} />}
                 </button>
                 <div className="action-main">
-                  <div className="action-title">{a.title}</div>
-                  {a.description && <div className="sub">{a.description}</div>}
+                  <div className="action-title">{humanDates(a.title)}</div>
+                  {a.description && <div className="sub">{humanDates(a.description)}</div>}
                   <div className="action-meta">
                     {a.owner && <span className="tag"><Users size={12} />{a.owner}</span>}
-                    {a.deadline && <span className="tag"><Clock size={12} />{a.deadline}</span>}
+                    {a.deadline && <span className="tag"><Clock size={12} />{humanDates(a.deadline)}</span>}
                     <span className={`badge ${PRIORITY[a.priority]} small`}>{a.priority}</span>
                   </div>
                 </div>
@@ -477,7 +477,8 @@ export function OutboxCard({ view, compact = false }: { view: View; compact?: bo
                 <div className="msg-main">
                   <div className="msg-group">{labelOf(m, msg.group)}
                     <span className="recip" title={msg.recipient_source ? `From ${msg.recipient_source}` : undefined}>
-                      {n != null ? ` · ${n} recipient${n === 1 ? "" : "s"}` : ""}</span>
+                      {n === 1 && msg.recipients?.[0]?.name && msg.recipients[0].name !== labelOf(m, msg.group)
+                        ? ` · ${msg.recipients[0].name}` : n != null ? ` · ${n} recipient${n === 1 ? "" : "s"}` : ""}</span>
                     {msg.edited && <span className="badge badge-soft small edited">edited</span>}</div>
                   {(msg.also_groups?.length ?? 0) > 0 && <div className="sub">One message, also covering: {msg.also_groups!.map((g) => labelOf(m, g)).join(", ")}</div>}
                   <div className="sub ellipsis">{msg.subject}</div>

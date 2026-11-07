@@ -113,7 +113,7 @@ export function Landing() {
         </section>
 
         <section className="l-section l-final">
-          <h2>See it on a real-looking day</h2>
+          <h2>See Ripple handle a crisis</h2>
           <p>Three problems, one fictional hackathon, real agent runs.</p>
           <Link to="/app" className="btn btn-primary btn-lg">Try the demo</Link>
         </section>

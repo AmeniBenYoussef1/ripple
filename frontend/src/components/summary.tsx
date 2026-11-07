@@ -1,6 +1,7 @@
 // Organizer-facing summary of a problem, and the technical "Behind the scenes" panel.
 import { ChevronDown, Cpu, Mail, ShieldCheck, Users } from "lucide-react";
 import { useState } from "react";
+import { API, getEvent } from "../api";
 import { useRipple } from "../store";
 import type { EventState, View } from "../types";
 import { AGENTS, peopleAffected, unchanged } from "../view";
@@ -89,6 +90,9 @@ export function BehindTheScenes({ view, open = false }: { view?: View; open?: bo
           <dt>Cost</dt><dd>{usd(state.total_cost)} total{view?.costs ? ` · ${usd(thisCost)} this problem` : ""}
             {replay && <span className="tag tag-replay">recorded — $0 spent now</span>}</dd>
           {errorDetail && <><dt>Last error</dt><dd className="tech">{errorDetail}</dd></>}
+          <dt>Server</dt><dd className="tech">{API}</dd>
+          <dt>Event id</dt><dd className="tech">{getEvent()}</dd>
+          <dt>Switch mode</dt><dd>Set <code>DEMO_MODE=true</code> (Replay) or <code>false</code> (Live) in <code>backend/.env</code>, then restart the server. The CodeSprint demo always replays.</dd>
           <dt>≈ Saved</dt><dd>{usd(state.saved_total)}{est ? " (partly estimated from recorded runs)" : ""} by not waking agents a problem didn't need</dd>
         </dl>
         {view && <div>

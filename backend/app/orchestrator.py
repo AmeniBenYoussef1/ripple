@@ -874,8 +874,14 @@ async def _finish_coordination(event: Event, entry: dict, res: AgentResult, runn
     for m in drafts:
         # recipients come from the event files (code), the agent's "to" is only kept as a hint
         r = resolve(model, m["group"], event.data_dir)
+        people = r["recipients"]
+        # a personal message ("to": one email) goes to that person only, if the file lists them in the group
+        hint = str(m.get("to", "")).strip().lower()
+        one = [p for p in people if p["email"].lower() == hint]
+        if one:
+            people = one
         resolved.append({**m, "status": "draft", "to_hint": m.get("to", ""),
-                         "recipients": r["recipients"], "recipient_source": r["source"], "edits": []})
+                         "recipients": people, "recipient_source": r["source"], "edits": []})
     labels = {n.id: n.label for n in model.nodes}
     merged = one_message_per_person(resolved, lambda g: labels.get(g, g))
     messages = [{**m, "id": f"{entry['id']}-m{i}"} for i, m in enumerate(merged, 1)]

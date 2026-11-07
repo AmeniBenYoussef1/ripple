@@ -36,9 +36,9 @@ html { scroll-behavior: smooth; }
 .hm-node.origin .hm-dot { fill: var(--raspberry); stroke: var(--raspberry); }
 .hm-node.unchanged .hm-dot { fill: var(--surface); stroke: var(--node-stroke); stroke-dasharray: 3 3; }
 .hm-halo { fill: var(--raspberry); opacity: 0.18; animation: hm-pulse 1.6s ease-in-out infinite; }
-.hm-label { font: 700 13px var(--font); fill: var(--text); text-anchor: middle; }
+.hm-label { font: 700 13px var(--font); fill: var(--text); }
 .hm-node.unchanged .hm-label { fill: var(--muted); }
-.hm-unchanged { font: 600 11px var(--font); fill: var(--muted); text-anchor: middle; font-style: italic; }
+.hm-unchanged { font: 600 11px var(--font); fill: var(--muted); font-style: italic; }
 .hm-ring { fill: none; stroke: var(--coral); stroke-width: 2; transform-box: fill-box; transform-origin: center; opacity: 0;
   animation: hm-ring 2.6s ease-out forwards; }
 .hm-chip { transition: transform 0.9s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.5s ease; opacity: 0; }

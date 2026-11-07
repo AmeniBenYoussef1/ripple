@@ -487,3 +487,5 @@ select.text-input { appearance: auto; }
 .side-theme { margin-left: auto; }
 .seg-btn.wide { padding: 0 14px; }
 @media (max-width: 1100px) { .side-theme { display: none; } }
+
+.edge-member { stroke-dasharray: 4 4; }

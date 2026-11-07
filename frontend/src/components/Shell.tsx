@@ -1,5 +1,5 @@
 // Sidebar, the stats bar and the "Report a problem" dialog.
-import { FileUp, FlaskConical, History, Home, Inbox, LayoutDashboard, Settings, X, Zap } from "lucide-react";
+import { FileUp, FlaskConical, History, Home, Inbox, LayoutDashboard, Settings, UserRound, X, Zap } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { ThemeToggle } from "../theme";
@@ -65,8 +65,8 @@ export function Sidebar() {
         ))}
       </ul>
       <div className="side-user">
-        <span className="avatar" aria-hidden="true">A</span>
-        <div><div className="user-name">Ameni</div><div className="user-role">Organizer</div></div>
+        <span className="avatar" aria-hidden="true"><UserRound size={18} /></span>
+        <div><div className="user-name">Organizer</div><div className="user-role">No account needed</div></div>
       </div>
     </nav></div>
   );

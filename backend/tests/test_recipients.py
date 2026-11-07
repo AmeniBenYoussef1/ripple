@@ -108,3 +108,15 @@ def test_members_of_an_affected_group_are_affected_one_wave_later():
     assert imp.effects["grp_speaker_1"] == "inform"
     wave_of = {n: i for i, w in enumerate(imp.waves) for n in w}
     assert wave_of["grp_speaker_1"] == wave_of["grp_speakers"] + 1
+
+
+
+def test_personal_messages_to_one_speaker_each(client):
+    one = client.post("/api/events/demo/disruptions", json={"text": "The hall just cancelled."}).json()
+    out = client.post(f"/api/events/demo/scenarios/{one['scored'][0]['id']}/choose").json()
+    speakers = [m for m in out["outbox"] if m["group"] == "grp_speakers"]
+    # the Coordinator wrote one message per speaker, all tagged "Speakers": each goes to its speaker only
+    assert sorted(m["to"] for m in speakers) == ["speaker1@example.com", "speaker2@example.com", "speaker3@example.com"]
+    everyone = [p["email"] for m in out["outbox"] for p in m["recipients"]]
+    assert len(everyone) == len(set(everyone))                                # nobody gets two messages
+    assert all(not m.get("also_groups") or m["group"] not in m["also_groups"] for m in out["outbox"])

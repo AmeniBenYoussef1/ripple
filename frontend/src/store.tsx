@@ -110,7 +110,10 @@ function feedLine(type: string, d: Record<string, any>): FeedItem | null {
 /** Feed for an entry with no live record (e.g. after a server restart). */
 export function summaryFeed(e: Entry): FeedItem[] {
   const out: FeedItem[] = [];
-  const push = (kind: FeedItem["kind"], text: string) => out.push({ at: null, kind, text });
+  // no live record (e.g. after a reload of an older problem): use the times the server saved
+  const reported = Date.parse(e.at);
+  const decided = e.decisions?.find((d) => d.kind === "approved")?.at;
+  const push = (kind: FeedItem["kind"], text: string, at: number = reported) => out.push({ at: Number.isNaN(at) ? null : at, kind, text });
   if (e.impact) push("finding", `The problem touches ${plural(e.impact.waves.flat().length, "part")} of the event`);
   if (e.routing) {
     const skipped = Object.keys(e.routing.skipped).map(title);
@@ -118,7 +121,7 @@ export function summaryFeed(e: Entry): FeedItem[] {
   }
   if (e.candidates?.length) push("finding", `Found ${plural(e.candidates.length, "venue option")}`);
   if (e.scored?.length) push("finding", `${plural(e.scored.length, "option")} ranked`);
-  if (e.outbox?.length) push("draft", `${plural(e.outbox.length, "message")} ready for your review`);
+  if (e.outbox?.length) push("draft", `${plural(e.outbox.length, "message")} ready for your review`, decided ? Date.parse(decided) : reported);
   return out.reverse();
 }
 

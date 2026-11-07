@@ -227,3 +227,21 @@ export function unchanged(model: EventModel, v: View): string[] {
   const touched = new Set(Object.keys(v.impact.effects));
   return model.nodes.filter((n) => !touched.has(n.id)).map((n) => n.label);
 }
+
+// ---- dates people read: "2026-11-21" / "Saturday 21 November 2026" -> "Sat 21 Nov" ----
+
+const MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+const short = (d: Date) => d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+
+export function humanDates(text: string): string {
+  return text
+    .replace(/\b(\d{4})-(\d{2})-(\d{2})\b/g, (m, y, mo, d) => {
+      const dt = new Date(Number(y), Number(mo) - 1, Number(d));
+      return Number.isNaN(dt.getTime()) ? m : short(dt);
+    })
+    .replace(/\b(?:(?:mon|tues|wednes|thurs|fri|satur|sun)day,?\s+)?(\d{1,2})\s+(january|february|march|april|may|june|july|august|september|october|november|december)(?:\s+(\d{4}))?\b/gi,
+      (m, d, mon, y) => {
+        const dt = new Date(y ? Number(y) : new Date().getFullYear(), MONTHS.indexOf(mon.toLowerCase()), Number(d));
+        return Number.isNaN(dt.getTime()) ? m : short(dt);
+      });
+}

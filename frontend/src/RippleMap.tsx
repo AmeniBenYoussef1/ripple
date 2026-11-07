@@ -7,7 +7,7 @@ const H = 640;
 const CX = W / 2;
 const CY = H / 2;
 const NODE_W = 136;
-const NODE_H = 46;
+const NODE_H = 56;
 const RING_MIN = { rx: 215, ry: 128 };
 const RING_MAX = { rx: 380, ry: 215 };
 
@@ -29,11 +29,15 @@ interface Placed {
   wave: number; // 0 = origin, -1 = not affected
 }
 
-function ringSize(i: number, n: number) {
-  if (n <= 1) return RING_MIN;
-  const t = (i - 1) / (n - 1);
-  return { rx: RING_MIN.rx + (RING_MAX.rx - RING_MIN.rx) * t, ry: RING_MIN.ry + (RING_MAX.ry - RING_MIN.ry) * t };
+/** Ring i (1 = first wave): the first two keep their sizes, later waves go further out. */
+function ringSize(i: number, _n?: number) {
+  if (i <= 1) return RING_MIN;
+  return { rx: Math.min(RING_MAX.rx + (i - 2) * 70, W / 2 - NODE_W / 2 - 6), ry: Math.min(RING_MAX.ry + (i - 2) * 30, H / 2 - NODE_H / 2 - 6) };
 }
+
+/** Two boxes overlap (with a small gap)? */
+const clash = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+  Math.abs(a.x - b.x) < NODE_W + 8 && Math.abs(a.y - b.y) < NODE_H + 6;
 
 /** Fixed slots around the frame for nodes the disruption does not touch.
  *  Top and bottom rows first; the side columns only when more than 14 nodes need a place. */
@@ -70,22 +74,49 @@ function layout(model: EventModel, impact: Impact | undefined): Placed[] {
     });
     return placed;
   }
+  // Each affected item starts at the angle of the item it was reached from (short tree arrows),
+  // then slides along its ring until it overlaps nothing already placed.
   const placed: Placed[] = [{ id: impact.origin, x: CX, y: CY, wave: 0 }];
-  const n = impact.waves.length;
+  const angle = new Map<string, number>();
+  const out = new Map<string, Set<string>>();
+  for (const e of model.edges) (out.get(e.from) ?? out.set(e.from, new Set()).get(e.from)!).add(e.to);
+  const inside = (x: number, y: number) => x - NODE_W / 2 >= 4 && x + NODE_W / 2 <= W - 4 && y - NODE_H / 2 >= 4 && y + NODE_H / 2 <= H - 4;
   impact.waves.forEach((ids, i) => {
-    const { rx, ry } = ringSize(i + 1, n);
-    const m = ids.length;
+    const { rx, ry } = ringSize(i + 1);
+    const prev = i === 0 ? [impact.origin] : impact.waves[i - 1];
+    const siblings = new Map<string, number>();
     ids.forEach((id, k) => {
-      const a = (2 * Math.PI * k) / m - Math.PI / 2 + (i % 2 ? Math.PI / m : 0);
-      placed.push({ id, x: CX + rx * Math.cos(a), y: CY + ry * Math.sin(a), wave: i + 1 });
+      const parent = prev.find((p) => out.get(p)?.has(id)) ?? prev.find((p) => id.startsWith(p.replace(/s$/, "") + "_"));
+      let a0 = i === 0 || parent === undefined || !angle.has(parent)
+        ? (2 * Math.PI * k) / ids.length - Math.PI / 2
+        : angle.get(parent)!;
+      if (parent !== undefined && i > 0) {          // fan the children of one parent out a little
+        const n = siblings.get(parent) ?? 0;
+        siblings.set(parent, n + 1);
+        a0 += (n % 2 ? -1 : 1) * Math.ceil(n / 2) * 0.16;
+      }
+      let spot = { x: CX + rx * Math.cos(a0), y: CY + ry * Math.sin(a0), a: a0 };
+      search: for (const scale of [1, 1.12, 0.9, 1.24]) {
+        for (let step = 0; step <= 90; step++) {
+          const a = a0 + (step % 2 ? 1 : -1) * Math.ceil(step / 2) * 0.07;
+          const p = { x: CX + rx * scale * Math.cos(a), y: CY + ry * scale * Math.sin(a) };
+          if (inside(p.x, p.y) && !placed.some((q) => clash(p, q))) { spot = { ...p, a }; break search; }
+        }
+      }
+      angle.set(id, spot.a);
+      placed.push({ id, x: spot.x, y: spot.y, wave: i + 1 });
     });
   });
+  // untouched items take free slots around the frame
   const taken = new Set(placed.map((p) => p.id));
   const rest = model.nodes.filter((nd) => !taken.has(nd.id)).sort((a, b) => a.id.localeCompare(b.id));
-  const slots = frameSlots(rest.length);
+  const free = [...frameSlots(rest.length), ...frameSlots(99)].filter((sl, k, all) =>
+    all.findIndex((o) => o.x === sl.x && o.y === sl.y) === k);
   rest.forEach((nd, k) => {
-    const s = slots[Math.floor((k * slots.length) / Math.max(rest.length, 1)) % slots.length];
-    placed.push({ id: nd.id, x: s.x, y: s.y, wave: -1 });
+    const ideal = Math.floor((k * Math.min(free.length, 14)) / Math.max(rest.length, 1));
+    const order = [...free.slice(ideal), ...free.slice(0, ideal)];
+    const sl = order.find((o) => !placed.some((q) => clash(o, q))) ?? order[0];
+    placed.push({ id: nd.id, x: sl.x, y: sl.y, wave: -1 });
   });
   return placed;
 }
@@ -101,8 +132,15 @@ function exitPoint(x: number, y: number, tx: number, ty: number, pad = 4) {
   return { x: x + dx * s, y: y + dy * s };
 }
 
-function truncate(s: string, max = 17) {
-  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+/** A label on at most two lines of ~17 characters (cut at a space; the second line ends with … if needed). */
+function twoLines(s: string, max = 17): string[] {
+  if (s.length <= max) return [s];
+  const words = s.split(/\s+/);
+  let first = "";
+  while (words.length && (first ? first.length + 1 + words[0].length : words[0].length) <= max) first = first ? `${first} ${words.shift()}` : words.shift()!;
+  if (!first) first = words.shift()!.slice(0, max);
+  const rest = words.join(" ");
+  return rest ? [first, rest.length > max ? `${rest.slice(0, max - 1)}…` : rest] : [first];
 }
 
 interface Props {
@@ -138,10 +176,27 @@ export function RippleMap({ model, impact, resolved, animateKey }: Props) {
   }, [animateKey, waves, !!impact]);   // replay only for a new disruption, not on every data refresh
 
   const visible = (p: Placed) => p.wave <= shown;
-  const affected = (id: string) => (pos.get(id)?.wave ?? -1) >= 0;
   const checkedOk = new Set(impact?.checked_ok ?? []);
 
   const edges = model.edges.filter((e) => pos.has(e.from) && pos.has(e.to));
+  // The ripple as a tree: one arrow into each affected item, from an item of the wave before
+  // (or from its group, for the members of a group). Fewer crossings, and easy to follow.
+  const tree = useMemo(() => {
+    const parent = new Map<string, { from: string; member: boolean }>();
+    if (!impact) return parent;
+    const out = new Map<string, Set<string>>();
+    for (const e of model.edges) (out.get(e.from) ?? out.set(e.from, new Set()).get(e.from)!).add(e.to);
+    const levels = [[impact.origin], ...impact.waves];
+    for (let k = 1; k < levels.length; k++) {
+      for (const id of levels[k]) {
+        const linked = (x: string) => out.get(x)?.has(id);
+        const groupOf = (x: string) => id.startsWith(x.replace(/s$/, "") + "_");
+        const p = levels[k - 1].find(linked) ?? levels[k - 1].find(groupOf) ?? levels.slice(0, k).flat().find(linked);
+        if (p) parent.set(id, { from: p, member: !linked(p) });
+      }
+    }
+    return parent;
+  }, [model, impact]);
   const total = model.nodes.length;
   const hit = impact ? impact.waves.flat().length : 0;
 
@@ -158,7 +213,7 @@ export function RippleMap({ model, impact, resolved, animateKey }: Props) {
         {/* rings, outermost first */}
         {impact &&
           Array.from({ length: waves }, (_, k) => waves - k).map((i) => {
-            const { rx, ry } = ringSize(i, waves);
+            const { rx, ry } = ringSize(i);
             return (
               <g key={`ring-${i}`} className={`fade ${i <= shown ? "on" : ""}`}>
                 <ellipse cx={CX} cy={CY} rx={rx + 70} ry={ry + 34} className="ring" style={{ fillOpacity: 0.07 + 0.06 * (waves - i) }} />
@@ -171,21 +226,22 @@ export function RippleMap({ model, impact, resolved, animateKey }: Props) {
           <text key={col.title} x={110 + (c * (W - 220)) / (CALM_COLUMNS.length - 1)} y={34} className="col-title">{col.title}</text>
         ))}
 
-        {/* edges */}
-        {edges.map((e, k) => {
-          const a = pos.get(e.from)!;
-          const b = pos.get(e.to)!;
-          const live = impact && affected(e.from) && affected(e.to) && b.wave > a.wave;
-          if (!live) {
-            // once something is disrupted, only the ripple's own arrows are drawn
-            return impact ? null : <line key={k} x1={a.x} y1={a.y} x2={b.x} y2={b.y} className="edge-idle" />;
-          }
+        {/* edges: the ripple's tree when something is disrupted, all links when calm */}
+        {impact && [...tree.entries()].map(([to, { from, member }]) => {
+          const a = pos.get(from);
+          const b = pos.get(to);
+          if (!a || !b) return null;
           const p = exitPoint(a.x, a.y, b.x, b.y);
           const q = exitPoint(b.x, b.y, a.x, a.y);
           return (
-            <line key={k} x1={p.x} y1={p.y} x2={q.x} y2={q.y} markerEnd="url(#arrow)"
-              className={`edge-live fade ${b.wave <= shown ? "on" : ""}`} />
+            <line key={to} x1={p.x} y1={p.y} x2={q.x} y2={q.y} markerEnd="url(#arrow)"
+              className={`edge-live ${member ? "edge-member" : ""} fade ${b.wave <= shown ? "on" : ""}`} />
           );
+        })}
+        {!impact && edges.map((e, k) => {
+          const a = pos.get(e.from)!;
+          const b = pos.get(e.to)!;
+          return <line key={k} x1={a.x} y1={a.y} x2={b.x} y2={b.y} className="edge-idle" />;
         })}
 
         {/* nodes */}
@@ -212,8 +268,18 @@ export function RippleMap({ model, impact, resolved, animateKey }: Props) {
             <g key={p.id} className={`fade ${visible(p) || p.wave < 0 ? "on" : ""}`} transform={`translate(${p.x - NODE_W / 2} ${p.y - NODE_H / 2})`}>
               <title>{`${node.label}${size}${node.source ? ` (from ${node.source})` : ""}`}</title>
               <rect width={NODE_W} height={NODE_H} rx={isGroup ? NODE_H / 2 : 10} className={cls} />
-              <text x={NODE_W / 2} y={20} className={`node-label ${isOrigin ? "on-dark" : ""}`}>{truncate(node.label + (isGroup ? size : ""))}</text>
-              <text x={NODE_W / 2} y={36} className={`node-sub ${isOrigin ? "on-dark" : ""} ${cls.includes("checked") ? "ok" : ""}`}>{sub}</text>
+              {(() => {
+                const lines = twoLines(node.label + (isGroup ? size : ""));
+                const y0 = lines.length === 2 ? 17 : 23;
+                return (
+                  <>
+                    {lines.map((l, i) => (
+                      <text key={i} x={NODE_W / 2} y={y0 + i * 14} className={`node-label ${isOrigin ? "on-dark" : ""}`}>{l}</text>
+                    ))}
+                    <text x={NODE_W / 2} y={y0 + lines.length * 14 + 2} className={`node-sub ${isOrigin ? "on-dark" : ""} ${cls.includes("checked") ? "ok" : ""}`}>{sub}</text>
+                  </>
+                );
+              })()}
             </g>
           );
         })}

@@ -75,7 +75,8 @@ def one_message_per_person(messages: list[dict[str, Any]], label=lambda g: g) ->
             base["body"] = base.get("body", "") + "".join(
                 f"\n\nAlso for you, as one of the {label(messages[o]['group'])}:\n{messages[o].get('body', '')}"
                 for o in parts[1:])
-            base["also_groups"] = [messages[o]["group"] for o in parts[1:]]
+            base["also_groups"] = list(dict.fromkeys(messages[o]["group"] for o in parts[1:]
+                                                     if messages[o]["group"] != base["group"]))
         base["recipients"] = people
         out.append((min(key), address(base)))
     # messages nobody could be found for stay as they are (they say so)
