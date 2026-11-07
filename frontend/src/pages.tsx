@@ -10,7 +10,7 @@ import { RippleMap } from "./RippleMap";
 import { useRipple } from "./store";
 import { useTheme } from "./theme";
 import type { EventModel } from "./types";
-import { entryToView, peopleAffected } from "./view";
+import { entryToView, peopleAffected, problemTitle } from "./view";
 
 function eventFacts(m: EventModel) {
   const date = m.nodes.map((n) => n.attrs.date).find(Boolean) as string | undefined;
@@ -88,7 +88,7 @@ export function HomePage() {
                     <button type="button" className="hist-row" onClick={() => { select(h.id); nav("/app/event"); }}>
                       <span className="hist-n">{n}</span>
                       <span className="hist-main">
-                        <span className="hist-text">{h.text}</span>
+                        <span className="hist-text">{problemTitle(h.text, h.disruption?.detail)}</span>
                         <span className="sub">
                           {new Date(h.at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
                           {(() => { const p = peopleAffected(state.model, entryToView(h)); return p ? ` · ${p.count}${p.pending ? "+" : ""} people affected` : ""; })()}
@@ -130,8 +130,11 @@ export function WorkspacePage() {
               return mine.length ? <Pill tone="info">Plan v{mine[mine.length - 1].version}</Pill> : null;
             })()}
           </div>
-          <h1>{view ? view.text : "Event workspace"}</h1>
+          <h1>{view ? problemTitle(view.text, view.disruption?.detail) : "Event workspace"}</h1>
           {view?.disruption?.detail && <p className="sub">{view.disruption.detail}</p>}
+          {view && problemTitle(view.text) !== view.text && (
+            <details className="pasted"><summary>The message you pasted</summary><p>{view.text}</p></details>
+          )}
         </div>
         <div className="ws-actions">
           {state.history.length > 1 && (

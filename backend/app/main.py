@@ -217,6 +217,8 @@ def create_app(events_dir: Path = EVENTS, fixtures_dir: Path = FIXTURES, model_p
             vid = fresh = secrets.token_hex(16)
         request.state.visitor = vid
         request.state.ip = request.client.host if request.client else "unknown"
+        if request.method == "OPTIONS":                         # CORS preflights carry no cookie
+            return await call_next(request)
         m = re.match(r"^/api/events/([^/]+)", request.url.path)
         if m:
             eid = m.group(1)
@@ -230,7 +232,10 @@ def create_app(events_dir: Path = EVENTS, fixtures_dir: Path = FIXTURES, model_p
             visitors.cleanup(events_dir, recordings_dir)
         response = await call_next(request)
         if fresh:
-            response.set_cookie(COOKIE, vid, max_age=30 * 24 * 3600, httponly=True, samesite="lax")
+            # frontend and backend on different sites (e.g. Vercel + Render) need SameSite=None; Secure
+            cross = os.environ.get("RIPPLE_CROSS_SITE_COOKIE", "false").lower() == "true"
+            response.set_cookie(COOKIE, vid, max_age=30 * 24 * 3600, httponly=True,
+                                samesite="none" if cross else "lax", secure=cross)
         return response
 
     def live_gate(request: Request, event_id: str, kind: str) -> bool:

@@ -204,3 +204,13 @@ def test_sample_pack_download(tmp_path):
         names = zipfile.ZipFile(BytesIO(r.content)).namelist()
         assert r.headers["content-type"] == "application/zip"
         assert {f"ripple-sample-pack/{n}" for n in FILES} <= set(names)
+
+
+def test_cors_preflight_on_a_visitor_event_passes_without_a_cookie(tmp_path):
+    app, _, _ = make(tmp_path)
+    with TestClient(app) as c:
+        eid = c.post("/api/visitor/event").json()["event_id"]
+    with TestClient(app) as browser:                                   # preflights never carry cookies
+        r = browser.options(f"/api/events/{eid}/setup/confirm", headers={
+            "Origin": "http://localhost:5173", "Access-Control-Request-Method": "POST"})
+        assert r.status_code == 200 and r.headers["access-control-allow-origin"] == "http://localhost:5173"

@@ -245,3 +245,11 @@ export function humanDates(text: string): string {
         return Number.isNaN(dt.getTime()) ? m : short(dt);
       });
 }
+
+/** A pasted email makes a poor title: long or multi-line text is shown as the analyst's one-line summary. */
+export function problemTitle(text: string, detail?: string | null): string {
+  const long = text.length > 90 || text.includes("\n");
+  if (!long) return text;
+  if (detail) return detail.split(/(?<=[.!?])\s/)[0];
+  return text.replace(/\s+/g, " ").slice(0, 80).trimEnd() + "…";
+}

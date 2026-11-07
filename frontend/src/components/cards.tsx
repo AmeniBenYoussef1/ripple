@@ -11,7 +11,7 @@ import { api } from "../api";
 import { useRipple } from "../store";
 import type { FeedItem } from "../store";
 import type { AgentName, AgentView, Candidate, Message, Scenario, Scored, View } from "../types";
-import { AGENT_SUBTITLE, AGENTS, humanDates, labelOf, plainStep, sizeOf } from "../view";
+import { AGENT_SUBTITLE, AGENTS, humanDates, labelOf, plainStep, problemTitle, sizeOf } from "../view";
 import { CardHead, Donut, duration } from "./ui";
 
 const AGENT_ICON: Record<AgentName, ReactNode> = {
@@ -461,7 +461,7 @@ export function OutboxCard({ view, compact = false }: { view: View; compact?: bo
   return (
     <section className="card" id={compact ? undefined : "outbox-card"}>
       <CardHead icon={<Inbox size={18} />} title="Outbox"
-        sub={compact ? view.text : view.chosen ? `Drafts for option ${view.chosen}` : "One draft per affected group"}
+        sub={compact ? problemTitle(view.text, view.disruption?.detail) : view.chosen ? `Drafts for option ${view.chosen}` : "One draft per affected group"}
         right={msgs.length ? <Donut done={approved} total={msgs.length} size={56} /> : null} />
       {msgs.length === 0 ? (
         <p className="empty">{view.coordinator === "waiting_for_choice"
