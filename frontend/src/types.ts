@@ -65,6 +65,8 @@ export interface Scenario {
   extra_cost_eur?: number | null;
   capacity?: number | null;
   changes?: { node?: string; replace_with?: string; set?: Record<string, unknown> }[];
+  /** set by code (rooms.py): the one room this option uses */
+  venue?: { name: string; url?: string | null; candidate: number | null; capacity: number | null; rooms: number[]; room_to_confirm: boolean };
 }
 
 export interface Scored {
@@ -98,6 +100,7 @@ export interface Message {
   to_hint?: string;
   edited?: boolean;
   edits?: { at: string; subject: string; body: string }[];
+  also_groups?: string[];
 }
 
 export interface FileInfo {

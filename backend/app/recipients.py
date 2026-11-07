@@ -43,6 +43,46 @@ def text_lines(path: Path) -> list[str]:
     return path.read_text(encoding="utf-8").splitlines()
 
 
+def member_groups(model: EventModel, group_id: str) -> list[str]:
+    """Sub-groups of a group, from the same file: "grp_speakers" -> "grp_speaker_1", "grp_speaker_2"..."""
+    node = next((n for n in model.nodes if n.id == group_id), None)
+    if node is None or node.type.value != "group":
+        return []
+    prefix = node.id.rstrip("s") + "_"
+    return [n.id for n in model.nodes
+            if n.type.value == "group" and n.id != node.id and n.id.startswith(prefix) and n.source == node.source]
+
+
+def one_message_per_person(messages: list[dict[str, Any]], label=lambda g: g) -> list[dict[str, Any]]:
+    """Nobody gets two messages: people in several messages get one merged message with everything
+    that changed for them (the most specific message first, e.g. Speaker 2's own before the Speakers one)."""
+    first: dict[str, int] = {}
+    person: dict[str, dict] = {}
+    keys: dict[str, list[int]] = {}
+    for i, m in enumerate(messages):
+        for p in m.get("recipients") or []:
+            e = p["email"].lower()
+            person.setdefault(e, p)
+            keys.setdefault(e, []).append(i)
+    buckets: dict[tuple, list[dict]] = {}
+    for e, idx in keys.items():
+        buckets.setdefault(tuple(idx), []).append(person[e])
+    out: list[tuple[int, dict]] = []
+    for key, people in buckets.items():
+        parts = sorted(key, key=lambda i: (len(messages[i].get("recipients") or []), i))
+        base = dict(messages[parts[0]])
+        if len(parts) > 1:
+            base["body"] = base.get("body", "") + "".join(
+                f"\n\nAlso for you, as one of the {label(messages[o]['group'])}:\n{messages[o].get('body', '')}"
+                for o in parts[1:])
+            base["also_groups"] = [messages[o]["group"] for o in parts[1:]]
+        base["recipients"] = people
+        out.append((min(key), address(base)))
+    # messages nobody could be found for stay as they are (they say so)
+    out += [(i, address(m)) for i, m in enumerate(messages) if not m.get("recipients")]
+    return [m for _, m in sorted(out, key=lambda x: x[0])]
+
+
 def resolve(model: EventModel, group_id: str, data_dir: Path) -> dict[str, Any]:
     """{"recipients": [{name, email}], "source": file name or None}."""
     if group_id == NEWCOMERS_GROUP:
@@ -77,10 +117,9 @@ def resolve(model: EventModel, group_id: str, data_dir: Path) -> dict[str, Any]:
         # sub-groups (grp_speaker_s1, grp_speaker_s2...), resolved the same way
         size = node.attrs.get("size")
         if isinstance(size, int) and len(people) < size:
-            prefix = node.id.rstrip("s") + "_"
-            for child in model.nodes:
-                if child.id.startswith(prefix) and child.source == node.source:
-                    for p in resolve(model, child.id, data_dir)["recipients"]:
+            for child in member_groups(model, node.id):
+                if True:
+                    for p in resolve(model, child, data_dir)["recipients"]:
                         if p["email"] not in {x["email"] for x in people}:
                             people.append(p)
         return {"recipients": people, "source": node.source}

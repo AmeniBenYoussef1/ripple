@@ -36,7 +36,10 @@ export function HistoryPage() {
           <h1>History</h1>
           <p className="sub">Everything that happened to {state.model.title}: setup, problems, plan versions, your decisions, changed limits, edits and approvals.</p>
         </div>
-        {(state.plans?.length ?? 0) > 0 && <span className="pill pill-info">Plan v{state.plans!.length}</span>}
+        {(() => {
+          const n = (state.plans ?? []).filter((p) => p.disruption).length;
+          return n ? <span className="pill pill-info">{n} plan change{n === 1 ? "" : "s"}</span> : null;
+        })()}
       </header>
 
       <section className="card">

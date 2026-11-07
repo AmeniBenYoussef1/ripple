@@ -126,7 +126,10 @@ export function WorkspacePage() {
           <div className="row wrap">
             {view ? <Pill tone="alert">Problem {number}</Pill> : <Pill tone="ok">No problem reported</Pill>}
             {st && <Pill tone={st.tone}>{st.text}</Pill>}
-            {(state.plans?.length ?? 0) > 0 && <Pill tone="info">Plan v{state.plans!.length}</Pill>}
+            {(() => {
+              const mine = (state.plans ?? []).filter((p) => p.disruption === view?.id);
+              return mine.length ? <Pill tone="info">Plan v{mine[mine.length - 1].version}</Pill> : null;
+            })()}
           </div>
           <h1>{view ? view.text : "Event workspace"}</h1>
           {view?.disruption?.detail && <p className="sub">{view.disruption.detail}</p>}

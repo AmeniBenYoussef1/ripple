@@ -44,7 +44,11 @@ export function VenueCard({ view }: { view: View }) {
   // the venue of the chosen (or best) option, to highlight its pin
   const pick = view.scenarios?.find((s) => s.id === (view.chosen ?? view.scored?.find((x) => x.feasible)?.id));
   const pickName = pick?.changes?.find((c) => c.replace_with)?.replace_with;
-  const isPick = (name: string) => !!pickName && (core(pickName).includes(core(name)) || core(name).includes(core(pickName)));
+  const pickIndex = pick?.venue?.candidate ?? null;
+  const isPick = (name: string, i?: number) => (pickIndex !== null && i !== undefined ? i === pickIndex
+    : !!pickName && (core(pickName).includes(core(name)) || core(name).includes(core(pickName))));
+  // options that use a venue show that option's one room, never the venue's other sizes
+  const usedBy = (i: number) => (view.scenarios ?? []).filter((s) => s.venue?.candidate === i);
 
   const located = useMemo(() => (data?.candidates ?? []).map((c, i) => ({ ...c, n: i + 1 })).filter((c) => c.lat !== null && c.lon !== null), [data]);
   const points = useMemo(() => {
@@ -66,7 +70,7 @@ export function VenueCard({ view }: { view: View }) {
             <TileLayer url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' />
             {located.map((c) => (
-              <Marker key={c.url + c.name} position={[c.lat!, c.lon!]} icon={pin(String(c.n), isPick(c.name) ? "chosen" : "candidate")}>
+              <Marker key={c.url + c.name} position={[c.lat!, c.lon!]} icon={pin(String(c.n), isPick(c.name, c.n - 1) ? "chosen" : "candidate")}>
                 <Tooltip direction="top" offset={[0, -12]}>{c.name}</Tooltip>
               </Marker>
             ))}
@@ -84,12 +88,15 @@ export function VenueCard({ view }: { view: View }) {
       {error && <p className="fine">The map could not be loaded. The venue list below still works.</p>}
       <ol className="venue-list">
         {list.map((c, i) => (
-          <li key={c.url + c.name} className={isPick(c.name) ? "picked" : ""}>
-            <span className={`pin pin-${isPick(c.name) ? "chosen" : "candidate"} ${c.lat == null ? "pin-off" : ""}`}>{i + 1}</span>
+          <li key={c.url + c.name} className={isPick(c.name, i) ? "picked" : ""}>
+            <span className={`pin pin-${isPick(c.name, i) ? "chosen" : "candidate"} ${c.lat == null ? "pin-off" : ""}`}>{i + 1}</span>
             <div className="venue-main">
               <div className="venue-name">{c.name}</div>
               <div className="sub">
-                {[c.capacity ? `${c.capacity} people` : null, c.address || c.area, c.lat == null && data ? "not on the map (no exact address)" : null]
+                {[usedBy(i).length
+                    ? usedBy(i).map((s) => `Option ${s.id}: ${s.venue!.capacity} seats${s.venue!.room_to_confirm ? " (room to confirm)" : ""}`).join(", ")
+                    : c.capacity ? `${c.capacity} seats` : null,
+                  c.address || c.area, c.lat == null && data ? "not on the map (no exact address)" : null]
                   .filter(Boolean).join(" · ")}
               </div>
             </div>

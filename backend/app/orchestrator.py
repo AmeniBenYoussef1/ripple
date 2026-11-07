@@ -37,7 +37,9 @@ from .agents import (AgentResult, CandidatesReply, CoordinatorReply, DisruptionR
 from .exports import NEWCOMERS_GROUP, build_attendee_csv, build_ics
 from .impact_engine import propagate, route
 from .models import EventModel, NodeType, Scenario
-from .recipients import address, resolve
+from .recipients import address, member_groups, one_message_per_person, resolve
+from .rooms import settle_rooms
+from .whatif import attendee_group
 from .scoring import score
 
 BACKEND = Path(__file__).resolve().parents[1]
@@ -171,11 +173,13 @@ def log(event: Event, kind: str, text: str, **data: Any) -> None:
 
 
 def add_plan_version(event: Event, title: str, disruption_id: Optional[str]) -> dict[str, Any]:
+    """The event's original plan is version 0; each problem's plans count from v1."""
     plans = event.data.setdefault("plans", [])
-    plan = {"version": len(plans) + 1, "at": now_iso(), "title": title, "disruption": disruption_id}
+    version = 0 if disruption_id is None else 1 + sum(1 for p in plans if p.get("disruption") == disruption_id)
+    plan = {"version": version, "at": now_iso(), "title": title, "disruption": disruption_id}
     plans.append(plan)
-    if len(plans) > 1:
-        log(event, "plan", f"Plan v{plan['version']}: {title}", disruption=disruption_id, version=plan["version"])
+    if disruption_id is not None:
+        log(event, "plan", f"Plan v{version}: {title}", disruption=disruption_id, version=version)
     return plan
 
 
@@ -400,7 +404,8 @@ def total_cost(event: Event) -> Decimal:
     return sum((Decimal(c["cost"]) for c in event.data["costs"]), Decimal(0))
 
 
-def apply_scenario(model: EventModel, origin: str, kind: str, s: Scenario) -> EventModel:
+def apply_scenario(model: EventModel, origin: str, kind: str, s: Scenario,
+                   venue_name: Optional[str] = None) -> EventModel:
     """Write the chosen scenario back into the model, so the next disruption sees it."""
     nodes = {n.id: n for n in model.nodes}
     for ch in s.changes:
@@ -410,7 +415,7 @@ def apply_scenario(model: EventModel, origin: str, kind: str, s: Scenario) -> Ev
         if isinstance(ch.get("set"), dict):
             n.attrs.update(ch["set"])
         if ch.get("replace_with"):
-            n.attrs["replaced_by"] = ch["replace_with"]
+            n.attrs["replaced_by"] = venue_name or ch["replace_with"]
     if kind == "lost" and origin in nodes:
         node = nodes[origin]
         if s.capacity is not None:
@@ -664,6 +669,7 @@ async def handle_disruption(event: Event, text: str, runner: Runner, area: Optio
     d = res.data.disruption
     dis = d.model_dump(mode="json")
     impact = propagate(model, d)                                   # code
+    add_members(model, impact)                                     # code: Speakers -> Speaker 1, 2, 3
     await runner.stage("impact", {"disruption_id": did, "disruption": dis, **impact.to_dict()})
     cache = {a: v["hash"] for a, v in event.data["cache"].items()}
     decision = route(model, impact, cache)                         # code
@@ -704,6 +710,7 @@ async def handle_disruption(event: Event, text: str, runner: Runner, area: Optio
     elif "replanner" in decision.cached:
         scenarios = [Scenario.model_validate(s) for s in cached_output("replanner")["scenarios"]]
 
+    scenario_dicts, scenarios = settle(model, scenarios, candidates)
     scored = score(scenarios, remaining_budget(model))             # code
     if scenarios:
         await runner.stage("scenarios", {"disruption_id": did, "scored": [x.to_dict() for x in scored]})
@@ -723,7 +730,7 @@ async def handle_disruption(event: Event, text: str, runner: Runner, area: Optio
 
     entry.update(
         status="ready", disruption=dis, impact=impact.to_dict(), routing=decision.to_dict(),
-        candidates=candidates, scenarios=[s.model_dump(mode="json") for s in scenarios],
+        candidates=candidates, scenarios=scenario_dicts,
         scored=[x.to_dict() for x in scored], coordinator=coordinator, costs=costs,
         saved=saved, saved_total=str(sum((Decimal(v["cost"]) for v in saved.values() if v["cost"]), Decimal(0))),
         saved_is_estimate=any(v["estimate"] for v in saved.values()),
@@ -798,7 +805,7 @@ async def _coordinate(event: Event, entry: dict, scenario: Optional[dict], runne
                             name=coordinator_name(scenario))
     if scenario is not None:   # the organizer's choice holds even if the Coordinator asks a question
         model = apply_scenario(model, entry["disruption"]["node"], entry["disruption"]["kind"],
-                               Scenario.model_validate(scenario))
+                               Scenario.model_validate(scenario), (scenario.get("venue") or {}).get("name"))
         event.set_model(model)
     entry["chosen"] = scenario["id"] if scenario else None
     await _finish_coordination(event, entry, res, runner)
@@ -863,12 +870,15 @@ async def _finish_coordination(event: Event, entry: dict, res: AgentResult, runn
     drafts = out["messages"]
     if entry["disruption"]["kind"] == "resized":   # a grown group: existing members are not messaged (code rule)
         drafts = [m for m in drafts if m["group"] != entry["disruption"]["node"]]
-    messages = []
-    for i, m in enumerate(drafts, 1):
+    resolved = []
+    for m in drafts:
         # recipients come from the event files (code), the agent's "to" is only kept as a hint
         r = resolve(model, m["group"], event.data_dir)
-        messages.append(address({**m, "id": f"{entry['id']}-m{i}", "status": "draft", "to_hint": m.get("to", ""),
-                                 "recipients": r["recipients"], "recipient_source": r["source"], "edits": []}))
+        resolved.append({**m, "status": "draft", "to_hint": m.get("to", ""),
+                         "recipients": r["recipients"], "recipient_source": r["source"], "edits": []})
+    labels = {n.id: n.label for n in model.nodes}
+    merged = one_message_per_person(resolved, lambda g: labels.get(g, g))
+    messages = [{**m, "id": f"{entry['id']}-m{i}"} for i, m in enumerate(merged, 1)]
     files = build_files(event, entry["id"], model, out["revised_schedule"], messages)
     if "coordinator" in routing.get("hashes", {}) and res.data is not None:
         event.data["cache"]["coordinator"] = {"hash": routing["hashes"]["coordinator"], "output": out}
@@ -1014,8 +1024,8 @@ async def replan_with(event: Event, disruption_id: str, note: str, runner: Runne
     add_cost(event, entry["id"], "replanner", res.cost)
     if res.data is None:
         raise OrchestratorError("the Replanner asked a question instead of proposing options")
-    entry["scenarios"] = [s.model_dump(mode="json") for s in res.data.scenarios]
-    entry["scored"] = [x.to_dict() for x in score(res.data.scenarios, remaining_budget(model),
+    entry["scenarios"], settled = settle(model, res.data.scenarios, entry.get("candidates", []))
+    entry["scored"] = [x.to_dict() for x in score(settled, remaining_budget(model),
                                                    entry.get("relaxed", {}).get("capacity_slack", 0))]
     entry["rejected"] = []
     entry.setdefault("relaxed", {})["other"] = note
@@ -1062,6 +1072,31 @@ def set_budget(event: Event, remaining_eur: float) -> None:
             h["scored"] = [x.to_dict() for x in score([Scenario.model_validate(s) for s in h["scenarios"]],
                                                        remaining_eur, slack)]
     event.save()
+
+
+def add_members(model: EventModel, impact) -> None:
+    """When a group is affected, its sub-groups are too (they get the group's news), one wave later.
+    Header, ripple map and outbox then agree: Speaker 1 isn't "unchanged" when the Speakers are informed."""
+    i = 0
+    while i < len(impact.waves):
+        added = [c for g in impact.waves[i] for c in member_groups(model, g) if c not in impact.effects]
+        added = list(dict.fromkeys(added))
+        for c in added:
+            impact.effects[c] = "inform"
+        if added:
+            if i + 1 < len(impact.waves):
+                impact.waves[i + 1].extend(added)
+            else:
+                impact.waves.append(added)
+        i += 1
+
+
+def settle(model: EventModel, scenarios: list[Scenario], candidates: list[dict]) -> tuple[list[dict], list[Scenario]]:
+    """One room per venue option (see rooms.py); returns the stored dicts and the scenarios to score."""
+    gid = attendee_group(model)
+    size = model.node(gid).attrs.get("size") if gid else None
+    dicts = settle_rooms([s.model_dump(mode="json") for s in scenarios], candidates, size)
+    return dicts, [Scenario.model_validate(x) for x in dicts]
 
 
 def approve_messages(event: Event, ids: list[str]) -> list[dict[str, Any]]:

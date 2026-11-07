@@ -111,11 +111,18 @@ export function LiveFeed({ items }: { items: FeedItem[] }) {
 
 const core = (s: string) => s.split("(")[0].trim().toLowerCase();
 
-function venueOf(s: Scenario | undefined, candidates: Candidate[]): { name: string; cand?: Candidate } | null {
+interface VenueInfo { name: string; url?: string | null; capacity?: number | null; roomToConfirm: boolean; rooms: number[]; known: boolean }
+
+/** The option's venue: the room code settled on (one capacity), else what the agents wrote. */
+function venueOf(s: Scenario | undefined, candidates: Candidate[]): VenueInfo | null {
+  if (s?.venue) {
+    return { name: s.venue.name, url: s.venue.url, capacity: s.venue.capacity, roomToConfirm: s.venue.room_to_confirm,
+      rooms: s.venue.rooms, known: s.venue.candidate !== null };
+  }
   const name = s?.changes?.find((c) => c.replace_with)?.replace_with;
   if (!name) return null;
   const cand = candidates.find((c) => core(c.name).includes(core(name)) || core(name).includes(core(c.name)));
-  return { name, cand };
+  return { name, url: cand?.url, capacity: s?.capacity ?? cand?.capacity, roomToConfirm: false, rooms: [], known: !!cand };
 }
 
 function costText(v: number | null | undefined) {
@@ -244,10 +251,11 @@ export function PlanCard({ view, onNewProblem }: { view: View; onNewProblem: () 
       <div className="plan-top">
         <div className="eyebrow">Option {top.id}</div>
         <h3 className="plan-title">{top.title}</h3>
-        {venue?.cand ? (
+        {venue?.known ? (
           <div className="venue">
-            <span>{venue.name}{venue.cand.capacity ? ` · ${venue.cand.capacity} people` : ""}</span>
-            <a className="btn btn-secondary btn-sm" href={venue.cand.url} target="_blank" rel="noreferrer">View venue<ExternalLink size={13} /></a>
+            <span>{venue.name}{venue.capacity ? ` · ${venue.capacity} seats` : ""}</span>
+            {venue.roomToConfirm && <span className="badge badge-grey small" title={`This venue lists rooms of ${venue.rooms.join(", ")} seats; the smallest that fits is used`}>room to confirm</span>}
+            {venue.url && <a className="btn btn-secondary btn-sm" href={venue.url} target="_blank" rel="noreferrer">View venue<ExternalLink size={13} /></a>}
             <span className="badge badge-coral small">availability to confirm</span>
           </div>
         ) : venue ? <div className="venue"><span className="sub">Change:</span><span>{venue.name}</span></div> : null}
@@ -471,6 +479,7 @@ export function OutboxCard({ view, compact = false }: { view: View; compact?: bo
                     <span className="recip" title={msg.recipient_source ? `From ${msg.recipient_source}` : undefined}>
                       {n != null ? ` · ${n} recipient${n === 1 ? "" : "s"}` : ""}</span>
                     {msg.edited && <span className="badge badge-soft small edited">edited</span>}</div>
+                  {(msg.also_groups?.length ?? 0) > 0 && <div className="sub">One message, also covering: {msg.also_groups!.map((g) => labelOf(m, g)).join(", ")}</div>}
                   <div className="sub ellipsis">{msg.subject}</div>
                 </div>
                 <span className={`chip ${msg.status === "approved" ? "chip-done" : "chip-waiting"}`}>{msg.status === "approved" ? "Approved" : "Draft"}</span>

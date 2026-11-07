@@ -43,7 +43,7 @@ export function Sidebar() {
   const drafts = state?.history.reduce((n, h) => n + (h.outbox ?? []).filter((m) => m.status === "draft").length, 0) ?? 0;
   const links = [
     { to: "/app", label: "Home", icon: <Home size={18} />, end: true },
-    { to: "/app/setup", label: "Event setup", icon: <FileUp size={18} />, badge: state?.setup?.confirmed ? undefined : ("!" as const) },
+    { to: "/app/setup", label: "Event setup", icon: <FileUp size={18} />, badge: state && state.model.nodes.length === 0 ? ("!" as const) : undefined },
     { to: "/app/event", label: "Event workspace", icon: <LayoutDashboard size={18} /> },
     { to: "/app/whatif", label: "What-if", icon: <FlaskConical size={18} /> },
     { to: "/app/outbox", label: "Outbox", icon: <Inbox size={18} />, badge: drafts || undefined },

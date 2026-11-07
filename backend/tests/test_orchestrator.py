@@ -363,15 +363,15 @@ def test_decisions_reject_and_request_changes(setup):
 
 def test_approving_logs_a_decision_and_a_new_plan_version(setup):
     event, runner, _, _ = setup
-    assert [p["version"] for p in event.data["plans"]] == [1]
+    assert [p["version"] for p in event.data["plans"]] == [0]
     run(handle_disruption(event, T1, runner))
     run(choose_scenario(event, "B", runner))
     entry = event.data["history"][0]
     assert entry["decisions"][-1]["kind"] == "approved" and entry["decisions"][-1]["option"] == "B"
-    assert [p["version"] for p in event.data["plans"]] == [1, 2]
+    assert [p["version"] for p in event.data["plans"]] == [0, 1]
     assert event.data["plans"][1]["disruption"] == entry["id"]
     run(handle_disruption(event, T3, runner))           # informs people at once -> another version
-    assert len(event.data["plans"]) == 3
+    assert [(p["disruption"] is not None, p["version"]) for p in event.data["plans"]] == [(False, 0), (True, 1), (True, 1)]
     kinds = [l["kind"] for l in event.data["log"]]
     assert kinds[:2] == ["setup", "problem"] and "decision" in kinds and kinds.count("plan") == 2
 

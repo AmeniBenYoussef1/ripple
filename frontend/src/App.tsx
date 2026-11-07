@@ -24,7 +24,7 @@ function Layout() {
   useEffect(() => {
     if (!state || checked.current) return;
     checked.current = true;
-    if (!state.setup?.confirmed && state.history.length === 0 && loc.pathname === "/app") nav("/app/setup");
+    if (state.model.nodes.length === 0 && loc.pathname === "/app") nav("/app/setup");
   }, [state, loc.pathname, nav]);
   return (
     <div className="shell">

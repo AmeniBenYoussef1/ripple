@@ -164,7 +164,7 @@ def test_part3_endpoints(client):
     assert r.status_code == 200 and r.json()["status"] == "done"
     assert client.post("/api/events/demo/actions/nope", json={"done": True}).status_code == 400
     s = client.get("/api/events/demo").json()
-    assert [p["version"] for p in s["plans"]] == [1, 2]
+    assert [p["version"] for p in s["plans"]] == [0, 1]          # the original plan is v0; problem 1 starts at v1
     assert {"setup", "problem", "decision", "constraint", "plan", "action"} <= {l["kind"] for l in s["log"]}
 
 
