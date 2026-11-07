@@ -91,6 +91,7 @@ export function StartPage() {
       setSteps([]);
       const es = new EventSource(api.streamUrl(), { withCredentials: true });
       es.addEventListener("setup_uploaded", (m) => setSteps((s) => [`Sent ${JSON.parse((m as MessageEvent).data).file}`, ...s].slice(0, 8)));
+      es.addEventListener("agent_retry", (m) => setSteps((s) => [JSON.parse((m as MessageEvent).data).reason, ...s].slice(0, 8)));
       es.addEventListener("agent", (m) => {
         const d = JSON.parse((m as MessageEvent).data);
         if (d.status === "running" && d.event === "ToolCall" && d.description) setSteps((s) => [plainStep(d.description), ...s].slice(0, 8));

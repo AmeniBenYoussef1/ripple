@@ -233,7 +233,7 @@ export interface PlanVersion { version: number; at: string; title: string; disru
 
 export interface LogItem {
   at: string;
-  kind: "setup" | "problem" | "decision" | "plan" | "constraint" | "approval" | "action" | "edit";
+  kind: "setup" | "problem" | "decision" | "plan" | "constraint" | "approval" | "action" | "edit" | "retry";
   text: string;
   disruption?: string;
   [key: string]: unknown;

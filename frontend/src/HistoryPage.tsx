@@ -1,5 +1,5 @@
 // History: everything that happened to the event, from its setup to the last approval.
-import { CheckCheck, ClipboardCheck, FileUp, GitBranch, History, Pencil, SlidersHorizontal, TriangleAlert, Vote } from "lucide-react";
+import { CheckCheck, ClipboardCheck, FileUp, GitBranch, History, Pencil, RotateCcw, SlidersHorizontal, TriangleAlert, Vote } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -16,6 +16,7 @@ const KINDS: { kind: LogItem["kind"]; label: string; icon: ReactNode }[] = [
   { kind: "edit", label: "Edits", icon: <Pencil size={16} /> },
   { kind: "approval", label: "Approvals", icon: <CheckCheck size={16} /> },
   { kind: "action", label: "Checklist", icon: <ClipboardCheck size={16} /> },
+  { kind: "retry", label: "Agent retries", icon: <RotateCcw size={16} /> },
 ];
 
 export function HistoryPage() {

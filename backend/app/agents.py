@@ -59,7 +59,22 @@ R = TypeVar("R", bound=BaseModel)
 
 
 class AgentOutputError(Exception):
-    """The agent's reply could not be turned into the expected JSON, even after one retry."""
+    """The agent's reply could not be turned into the expected JSON, even after one retry.
+    Keeps what the attempt cost and what the agent said, so both can be counted and logged."""
+
+    def __init__(self, message: str, *, cost: Decimal = Decimal(0), raw: str = "",
+                 thread_id: Optional[str] = None, events: Optional[list] = None) -> None:
+        super().__init__(message)
+        self.cost, self.raw, self.thread_id, self.events = cost, raw, thread_id, events or []
+
+
+# What a valid reply looks like, repeated in the retry message (the error alone isn't always enough)
+SHAPE_HINTS = {
+    "EventModelReply": ('{"event_model": {"event_id": "...", "title": "...", "nodes": [ONE flat list of '
+                        '{"id", "type": one of resource|commitment|schedule_item|group|constraint, "label", '
+                        '"attrs": {...all other facts...}, "source": "one file name"}], '
+                        '"edges": [{"from", "to", "type"}]}}'),
+}
 
 
 def extract_json(text: str) -> dict[str, Any]:
@@ -209,6 +224,7 @@ async def call_agent(
         retry_msg = (
             "Your last reply could not be used. Reply again with ONE JSON object only, "
             f"with the top-level key(s) {list(shape.model_fields)}. Error:\n{short_error(err)}"
+            + (f"\nExpected shape: {SHAPE_HINTS[shape.__name__]}" if shape.__name__ in SHAPE_HINTS else "")
         )
         run = await client.chat.send(thread_id, agent_id=aid, message=retry_msg, max_steps=max_steps)
         reply, more = await _consume(run, agent, on_event, log)
@@ -219,7 +235,8 @@ async def call_agent(
             parsed = parse_and_check(reply.content)
         except (ValueError, ValidationError) as err2:
             raise AgentOutputError(
-                f"{agent} agent returned invalid JSON twice: {short_error(err2, 400)}") from err2
+                f"{agent} agent returned invalid JSON twice: {short_error(err2, 400)}",
+                cost=result.cost, raw=result.raw, thread_id=thread_id, events=log) from err2
 
     if isinstance(parsed, list):
         result.questions = parsed

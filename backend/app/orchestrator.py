@@ -32,7 +32,7 @@ from typing import Any, Callable, Optional
 
 from pydantic import BaseModel
 
-from .agents import (AgentResult, CandidatesReply, CoordinatorReply, DisruptionReply,
+from .agents import (AgentOutputError, AgentResult, CandidatesReply, CoordinatorReply, DisruptionReply,
                      EventModelReply, EventCallback, Question, ScenariosReply, call_agent)
 from .exports import NEWCOMERS_GROUP, build_attendee_csv, build_ics
 from .headcount import on_site
@@ -220,11 +220,14 @@ class Runner:
 
     async def call(self, slug: str, agent: str, message: str, *, thread_name: str,
                    file_ids: Optional[list[str]] = None, check=None, name: Optional[str] = None,
-                   thread_id: Optional[str] = None, extra: Optional[dict] = None) -> AgentResult:
+                   thread_id: Optional[str] = None, extra: Optional[dict] = None,
+                   report_failure: bool = True) -> AgentResult:
         try:
             return await self._call(slug, agent, message, thread_name=thread_name, file_ids=file_ids, check=check,
                                     name=name, thread_id=thread_id, extra=extra)
         except Exception as err:   # tell the UI which agent failed, in plain words, then let the caller handle it
+            if not report_failure:     # the caller tries again first
+                raise
             await self.stage("agent_failed", {"agent": "impact_analyst" if agent == "setup_analyst" else agent,
                                               "reason": failure_reason(err), "detail": f"{type(err).__name__}: {err}"})
             raise
@@ -279,6 +282,17 @@ class Runner:
                "questions": [q.model_dump() for q in res.questions], "events": res.events,
                "agent_files": [{"name": f.name, "has_url": bool(getattr(f, "url", ""))} for f in res.files],
                **(extra or {})}
+        path.write_text(json.dumps(rec, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    def record_failure(self, slug: str, agent: str, attempt: int, message: str, err: Exception) -> None:
+        """Keep an unusable reply next to the recordings, to see later why it failed (live runs only)."""
+        if self.demo:
+            return
+        path = self._fixture(slug, f"{agent}-failed-{attempt}")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        rec = {"agent": agent, "recorded_at": now_iso(), "error": str(err), "message": message,
+               "cost": str(getattr(err, "cost", 0)), "thread_id": getattr(err, "thread_id", None),
+               "raw": getattr(err, "raw", ""), "events": getattr(err, "events", [])}
         path.write_text(json.dumps(rec, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
     async def upload(self, paths: list[Path]) -> list[str]:
@@ -603,8 +617,29 @@ async def analyze_event(event: Event, files: list[tuple[str, bytes]], runner: Ru
     slug = ("setup" if (runner.fixtures_dir / "setup").exists() else "setup-live") if runner.demo else "setup-live"
     message = setup_message(len(files)) if runner.demo and slug == "setup" and event.id == "demo" \
         else setup_message(len(files), event.id)
-    res = await runner.call(slug, "setup_analyst", message, thread_name=f"Event setup · {event.id}",
-                            file_ids=file_ids or None, check=model_checker)
+    # An unusable reply (even after the agent was asked again) gets one more try in a new
+    # conversation before the organizer sees an error. Failed tries are logged and their cost counted.
+    failed_cost = Decimal(0)
+    for attempt in (1, 2):
+        try:
+            res = await runner.call(slug, "setup_analyst", message,
+                                    thread_name=f"Event setup · {event.id}" + (" · second try" if attempt == 2 else ""),
+                                    file_ids=file_ids or None, check=model_checker, report_failure=attempt == 2)
+            break
+        except AgentOutputError as err:
+            failed_cost += err.cost
+            runner.record_failure(slug, "setup_analyst", attempt, message, err)
+            reason = str(err).splitlines()[0][:300]
+            log(event, "retry", f"Impact Analyst: reply couldn't be used (try {attempt} of 2): {reason}"
+                + (". Trying again in a new conversation." if attempt == 1 else ". Stopped."),
+                agent="impact_analyst", cost=str(err.cost), thread_id=err.thread_id)
+            if attempt == 2:
+                add_cost(event, "setup", "impact_analyst", failed_cost)
+                event.save()
+                raise
+            event.save()
+            await runner.stage("agent_retry", {"agent": "impact_analyst",
+                                               "reason": "Its first answer couldn't be read. Asking again in a new conversation."})
     if res.questions:
         q = [x.model_dump() for x in res.questions]
         await runner.stage("setup_questions", {"questions": q})
@@ -622,7 +657,7 @@ async def analyze_event(event: Event, files: list[tuple[str, bytes]], runner: Ru
     add_plan_version(event, "Original plan, from your event files", None)
     log(event, "setup", f"Event analyzed from {len(files)} files" + (" (recorded analysis)" if runner.demo else ""),
         files=[n for n, _ in files])
-    add_cost(event, "setup", "impact_analyst", res.cost)
+    add_cost(event, "setup", "impact_analyst", res.cost + failed_cost)   # failed tries cost money too
     shutil.rmtree(event.files_dir, ignore_errors=True)
     event.data["setup"] = {"status": "analyzed", "replay": runner.demo, "at": now_iso(),
                            "files": [{"name": n, "bytes": len(d)} for n, d in files],

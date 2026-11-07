@@ -70,6 +70,7 @@ export function BehindTheScenes({ view, open = false }: { view?: View; open?: bo
   const thisCost = Object.values(view?.costs ?? {}).reduce((s, c) => s + Number(c), 0);
   const skipped = view?.routing ? Object.entries(view.routing.skipped) : [];
   const cached = view?.routing ? Object.keys(view.routing.cached) : [];
+  const retries = (state.log ?? []).filter((l) => l.kind === "retry").slice(-4).reverse();
   return (
     <details className="card behind" open={open}>
       <summary>
@@ -108,6 +109,15 @@ export function BehindTheScenes({ view, open = false }: { view?: View; open?: bo
               {cached.map((a) => <li key={a}><strong>{title(a)}</strong>: same input as before, answer reused</li>)}
             </ul>
           )}
+        </div>}
+        {retries.length > 0 && <div>
+          <div className="eyebrow">Agent retries</div>
+          <ul className="skips">
+            {retries.map((l, i) => (
+              <li key={i}><span className="sub">{new Date(l.at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</span> <span className="tech">{l.text}</span>
+                {l.cost ? <span className="sub"> · {usd(String(l.cost))}</span> : null}</li>
+            ))}
+          </ul>
         </div>}
       </div>
     </details>

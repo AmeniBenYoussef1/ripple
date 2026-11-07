@@ -161,6 +161,7 @@ export function SetupPage() {
     const es = new EventSource(api.streamUrl(), { withCredentials: true });
     const add = (text: string) => setSteps((s) => (s[0] === text ? s : [text, ...s].slice(0, 30)));
     es.addEventListener("setup_uploaded", (m) => add(`Sent ${JSON.parse((m as MessageEvent).data).file} to Cominty`));
+    es.addEventListener("agent_retry", (m) => add(JSON.parse((m as MessageEvent).data).reason));
     es.addEventListener("agent", (m) => {
       const d = JSON.parse((m as MessageEvent).data);
       if (d.status === "running" && (d.event === "ToolCall" || d.event === "UploadingFile") && d.description) {
