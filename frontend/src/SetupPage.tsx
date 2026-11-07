@@ -5,8 +5,8 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent } from "react";
-import { useNavigate } from "react-router-dom";
-import { api } from "./api";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { api, DEMO_EVENT } from "./api";
 import { CardHead, Pill } from "./components/ui";
 import { RippleMap } from "./RippleMap";
 import { useRipple } from "./store";
@@ -114,8 +114,38 @@ function Understood({ model }: { model: EventModel }) {
 
 // ---- page ----
 
+function NewEvent({ onDone }: { onDone: () => void }) {
+  const { createEvent, busy } = useRipple();
+  const [title, setTitle] = useState("");
+  const [id, setId] = useState("");
+  const [touched, setTouched] = useState(false);
+  const slug = (t: string) => t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
+  const shownId = touched ? id : slug(title);
+  return (
+    <section className="card new-event">
+      <CardHead icon={<Sparkles size={18} />} title="New event"
+        sub="A separate event with its own files, problems and history. The CodeSprint demo is not touched." />
+      <div className="relax-grid two">
+        <label className="relax"><span>Event name</span>
+          <input className="text-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. HerCode Hackathon Paris" autoFocus />
+        </label>
+        <label className="relax"><span>Short id (letters, digits, -)</span>
+          <input className="text-input" value={shownId} onChange={(e) => { setTouched(true); setId(e.target.value); }} placeholder="hercode" />
+        </label>
+      </div>
+      <div className="row">
+        <button type="button" className="btn btn-primary" disabled={busy || !title.trim() || !/^[a-zA-Z0-9_-]{1,64}$/.test(shownId) || shownId === DEMO_EVENT}
+          onClick={async () => { if (await createEvent(shownId, title.trim())) onDone(); }}>Create event</button>
+        <button type="button" className="btn btn-ghost" onClick={onDone}>Cancel</button>
+      </div>
+    </section>
+  );
+}
+
 export function SetupPage() {
-  const { state, busy, analyze, confirmSetup } = useRipple();
+  const { state, busy, analyze, confirmSetup, eventId } = useRipple();
+  const [params, setParams] = useSearchParams();
+  const creating = params.get("new") === "1";
   const nav = useNavigate();
   const [picked, setPicked] = useState<Picked[]>([]);
   const [drag, setDrag] = useState(false);
@@ -141,6 +171,8 @@ export function SetupPage() {
   }, [running]);
 
   if (!state) return null;
+  if (creating) return <div className="page"><NewEvent onDone={() => setParams({})} /></div>;
+  const isDemo = eventId === DEMO_EVENT;
   const setup = state.setup ?? { status: "not_analyzed" as const };
   const analyzed = setup.status === "analyzed";
   const replay = state.demo_mode;
@@ -188,7 +220,7 @@ export function SetupPage() {
     <div className="page">
       <header className="ws-head">
         <div className="ws-title">
-          <h1>Event setup</h1>
+          <h1>Event setup <span className="h1-sub">· {state.model.title || eventId}</span></h1>
           <p className="sub">Give Ripple your event files. It reads them once and builds a map of your event, so it knows what a problem can touch.</p>
         </div>
         {analyzed && <Pill tone="ok">{setup.confirmed ? "Confirmed" : "Analyzed"}</Pill>}
@@ -208,9 +240,9 @@ export function SetupPage() {
             onChange={(e) => { if (e.target.files) add(e.target.files); e.target.value = ""; }} />
         </div>
         <div className="row wrap">
-          <button type="button" className="btn btn-ghost" onClick={useDemo} disabled={loadingDemo || running}>
+          {isDemo && <button type="button" className="btn btn-ghost" onClick={useDemo} disabled={loadingDemo || running}>
             {loadingDemo ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />}Use the demo files (CodeSprint)
-          </button>
+          </button>}
           {picked.length > 0 && <button type="button" className="link-btn" onClick={() => setPicked([])} disabled={running}>Clear all</button>}
         </div>
 
@@ -233,9 +265,11 @@ export function SetupPage() {
         {tooMany && <p className="reason">Ripple can read at most {MAX_FILES} files at a time. Merge some (e.g. speakers and volunteers in one people list).</p>}
 
         <div className={`mode-note ${replay ? "replay" : "live"}`}>
-          {replay
+          {replay && isDemo
             ? <><strong>Replay mode.</strong> Ripple shows its recorded analysis of the five CodeSprint demo files (made with the real Impact Analyst on 6 Nov 2026). Your files are listed but not sent anywhere.</>
-            : <><strong>Live.</strong> Your files are uploaded to Cominty and read by the Impact Analyst. Nothing is shared with anyone else.</>}
+            : replay
+            ? <><strong>Replay mode.</strong> Ripple replays this event's own recorded analysis, if there is one. A first analysis needs Live mode.</>
+            : <><strong>Live.</strong> Your files are uploaded to Cominty and read by the Impact Analyst. They are kept with this event only.</>}
         </div>
 
         <div className="row wrap">

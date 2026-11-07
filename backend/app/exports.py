@@ -122,7 +122,8 @@ def build_attendee_csv(participants_csv: Path, model: EventModel, messages: list
         else:
             continue
         for r in members:
-            u = updates.setdefault(r["email"], {"name": r["name"], "email": r["email"],
+            name = (r.get("name") or f"{r.get('first_name', '')} {r.get('last_name', '')}").strip()
+            u = updates.setdefault(r["email"], {"name": name, "email": r["email"],
                                                 "team": r.get("team", ""), "groups": [], "what_changed": []})
             u["groups"].append(label)
             u["what_changed"].append(m.get("subject") or "Update")

@@ -5,7 +5,7 @@ Rules, by the group's source file:
   late_registrations    the newcomers of a late registration (group "grp_newcomers")
   people.csv            a person whose name is the group label ("Speaker 2"),
                         else everyone whose role matches the label ("Speakers" -> speaker)
-  a text file (.txt)    the email address on the line that names the group (e.g. the caterer in a contract)
+  a text or PDF file    the email address on the line that names the group (e.g. the caterer in a contract)
 """
 from __future__ import annotations
 
@@ -27,8 +27,20 @@ def _rows(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(f))
 
 
+def full_name(r: dict[str, str]) -> str:
+    return (r.get("name") or f"{r.get('first_name', '')} {r.get('last_name', '')}").strip()
+
+
 def _person(r: dict[str, str]) -> dict[str, str]:
-    return {"name": r.get("name", ""), "email": r.get("email", "")}
+    return {"name": full_name(r), "email": r.get("email", "")}
+
+
+def text_lines(path: Path) -> list[str]:
+    """Lines of a text or PDF file (a contract usually names the supplier and its email on one line)."""
+    if path.suffix == ".pdf":
+        from pypdf import PdfReader
+        return [line for page in PdfReader(path).pages for line in (page.extract_text() or "").splitlines()]
+    return path.read_text(encoding="utf-8").splitlines()
 
 
 def resolve(model: EventModel, group_id: str, data_dir: Path) -> dict[str, Any]:
@@ -48,15 +60,17 @@ def resolve(model: EventModel, group_id: str, data_dir: Path) -> dict[str, Any]:
 
     if path.suffix == ".csv":
         rows = _rows(path)
-        exact = [r for r in rows if r.get("name", "").strip().lower() == label]
+        exact = [r for r in rows if full_name(r).lower() in (label, label.split("(")[0].strip())]
         if exact:
             return {"recipients": [_person(r) for r in exact], "source": node.source}
-        role = label.split()[0].rstrip("s")                      # "Speakers" -> "speaker"
-        return {"recipients": [_person(r) for r in rows if r.get("role", "").lower().startswith(role)],
+        # a role group: any word of the label names a role ("Speakers & mentors" -> speaker, mentor)
+        words = {w.rstrip("s") for w in re.findall(r"[a-z]+", label) if len(w) > 3}
+        return {"recipients": [_person(r) for r in rows
+                               if words & {w.rstrip("s") for w in re.findall(r"[a-z]+", r.get("role", "").lower())}],
                 "source": node.source}
 
-    if path.suffix == ".txt" and path.exists():
-        for line in path.read_text(encoding="utf-8").splitlines():
+    if path.suffix in (".txt", ".pdf") and path.exists():
+        for line in text_lines(path):
             if label in line.lower() or any(w in line.lower() for w in label.split() if len(w) > 4):
                 emails = EMAIL.findall(line)
                 if emails:

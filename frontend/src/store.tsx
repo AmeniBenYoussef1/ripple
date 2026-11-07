@@ -2,7 +2,7 @@
 // feed and agent timings. Every number shown in the UI comes from here, i.e. from the API.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { api, ApiError, friendlyError } from "./api";
+import { api, ApiError, friendlyError, getEvent, setEvent } from "./api";
 import type { AgentName, Entry, EventState, View } from "./types";
 import { AGENT_KEY, AGENTS, applyStream, entryToView, plainStep, startView } from "./view";
 
@@ -43,7 +43,13 @@ interface Store {
   reset: () => Promise<void>;
   analyze: (files: File[]) => Promise<boolean>;
   confirmSetup: () => Promise<void>;
+  eventId: string;
+  events: EventSummary[];
+  switchEvent: (id: string) => Promise<void>;
+  createEvent: (id: string, title: string) => Promise<boolean>;
 }
+
+export interface EventSummary { id: string; title: string; problems: number; setup: string; replay: boolean }
 
 export interface Notice { text: string; target?: "outbox" | "question" }
 
@@ -137,6 +143,10 @@ export function RippleProvider({ children }: { children: ReactNode }) {
   const [feeds, setFeeds] = useState<Record<string, FeedItem[]>>(() => load("ripple.feeds", {}));
   const [timings, setTimings] = useState<Record<string, Timing>>(() => load("ripple.timings", {}));
   const busyRef = useRef(false);
+  const [eventId, setEventId] = useState(getEvent());
+  const [events, setEvents] = useState<EventSummary[]>([]);
+  // feeds and timings are kept per event: disruption ids (d1, d2...) repeat across events
+  const fk = useCallback((id: string) => `${getEvent()}/${id}`, []);
   const liveId = useRef<string>("pending");
 
   useEffect(() => localStorage.setItem("ripple.feeds", JSON.stringify(feeds)), [feeds]);
@@ -144,6 +154,8 @@ export function RippleProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     const s = await api.load();
+    setEventId(getEvent());
+    api.listEvents().then(setEvents).catch(() => undefined);
     setState(s);
     setSelected((cur) => (cur && s.history.some((h) => h.id === cur) ? cur : s.history.at(-1)?.id));
     return s;
@@ -162,17 +174,17 @@ export function RippleProvider({ children }: { children: ReactNode }) {
       if (type === "started") liveId.current = d.disruption_id;
       const id = liveId.current;
       const line = feedLine(type, d);
-      if (line) setFeeds((f) => ({ ...f, [id]: [line, ...(f[id] ?? [])].slice(0, 200) }));
+      if (line) setFeeds((f) => ({ ...f, [fk(id)]: [line, ...(f[fk(id)] ?? [])].slice(0, 200) }));
 
       const agent: AgentName | undefined =
         type === "agent" ? AGENT_KEY[d.agent] : type === "agent_started" || type === "cost" ? d.agent : undefined;
       if (agent) {
         setTimings((t) => {
-          const cur = { ...(t[id] ?? {}) };
+          const cur = { ...(t[fk(id)] ?? {}) };
           const now = Date.now();
           if (type === "cost") cur[agent] = { start: cur[agent]?.start ?? now, end: now };
           else if (!cur[agent] || cur[agent]!.end) cur[agent] = { start: now };
-          return { ...t, [id]: cur };
+          return { ...t, [fk(id)]: cur };
         });
       }
       if (type === "cost") {
@@ -188,7 +200,7 @@ export function RippleProvider({ children }: { children: ReactNode }) {
     };
     STREAM_TYPES.forEach((t) => es.addEventListener(t, on(t)));
     return () => es.close();
-  }, []);
+  }, [eventId]);
 
   const run = useCallback(async <T,>(what: string, work: () => Promise<T>, startLive?: View): Promise<T | null> => {
     setError(null);
@@ -229,8 +241,8 @@ export function RippleProvider({ children }: { children: ReactNode }) {
 
   const entry = state?.history.find((h) => h.id === selected);
   const view = live ?? (entry ? entryToView(entry) : undefined);
-  const feed = view ? feeds[view.id] ?? (entry ? summaryFeed(entry) : []) : [];
-  const timing = view ? timings[view.id] ?? {} : {};
+  const feed = view ? feeds[fk(view.id)] ?? (entry ? summaryFeed(entry) : []) : [];
+  const timing = view ? timings[fk(view.id)] ?? {} : {};
 
   const store: Store = useMemo(() => ({
     state, view, selected, busy, error, errorDetail, feed, timing, notice, pending,
@@ -319,8 +331,6 @@ export function RippleProvider({ children }: { children: ReactNode }) {
         const r = await api.analyze(files);
         setState(r.state);
         setSelected(undefined);
-        setFeeds({});
-        setTimings({});
         if (r.status === "questions") setError("The Impact Analyst needs more information: " + (r.questions ?? []).map((q) => q.prompt).join(" "));
         return r.status === "analyzed";
       } catch (e) {
@@ -339,10 +349,42 @@ export function RippleProvider({ children }: { children: ReactNode }) {
     },
     reset: async () => {
       await run("reset", () => api.reset());
-      setFeeds({});
-      setTimings({});
+      const mine = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([k]) => !k.startsWith(`${getEvent()}/`)));
+      setFeeds((f) => mine(f) as Record<string, FeedItem[]>);
+      setTimings((t) => mine(t) as Record<string, Timing>);
     },
-  }), [state, view, selected, busy, error, errorDetail, feed, timing, notice, pending, run, fail]);
+    eventId, events,
+    switchEvent: async (id: string) => {
+      if (id === getEvent()) return;
+      setEvent(id);
+      setEventId(id);
+      setLive(null);
+      setSelected(undefined);
+      setNotice(null);
+      setError(null);
+      setState(null);
+      try {
+        await refresh();
+      } catch (e) {
+        fail(e);
+      }
+    },
+    createEvent: async (id: string, title: string) => {
+      try {
+        await api.createEvent(id, title);
+        setEvent(id);
+        setEventId(id);
+        setLive(null);
+        setSelected(undefined);
+        await refresh();
+        setNotice({ text: `Event "${title}" created. Add its files and let Ripple analyze them.` });
+        return true;
+      } catch (e) {
+        fail(e);
+        return false;
+      }
+    },
+  }), [state, view, selected, busy, error, errorDetail, feed, timing, notice, pending, run, fail, eventId, events, refresh]);
 
   return <Ctx.Provider value={store}>{children}</Ctx.Provider>;
 }

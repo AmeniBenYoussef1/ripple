@@ -2,7 +2,14 @@
 import type { EventState, Message, Venues } from "./types";
 
 export const API = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8000";
-export const EVENT_ID = "demo";
+/** The event on screen. "demo" is the CodeSprint demo (always replayed); others are your own events. */
+export const DEMO_EVENT = "demo";
+let currentEvent = localStorage.getItem("ripple.event") || DEMO_EVENT;
+export const getEvent = () => currentEvent;
+export function setEvent(id: string) {
+  currentEvent = id;
+  localStorage.setItem("ripple.event", id);
+}
 
 /** message = what the organizer sees; detail = the technical text (shown in Behind the scenes). */
 export class ApiError extends Error {
@@ -56,7 +63,7 @@ export function friendlyError(status: number, detail: string): string {
   return "Something went wrong. The details are in Behind the scenes.";
 }
 
-const ev = `/api/events/${EVENT_ID}`;
+const ev = () => `/api/events/${encodeURIComponent(currentEvent)}`;
 
 export interface WhatIfRipple {
   groups: { id: string; label: string; size?: number | null }[];
@@ -78,26 +85,33 @@ export interface WhatIf {
 export const api = {
   async load(): Promise<EventState> {
     try {
-      return await call<EventState>(ev);
+      return await call<EventState>(ev());
     } catch (e) {
-      if (e instanceof ApiError && e.message.startsWith("unknown event")) return api.setup();
+      // an event that no longer exists: go back to the CodeSprint demo
+      if (e instanceof ApiError && e.detail.includes("unknown event")) {
+        if (currentEvent !== DEMO_EVENT) {
+          setEvent(DEMO_EVENT);
+          return api.load();
+        }
+        return api.setup();
+      }
       throw e;
     }
   },
-  setup: () => call<EventState>(`${ev}/setup`, { method: "POST", body: "{}" }),
-  reset: () => call<EventState>(`${ev}/reset`, { method: "POST" }),
-  disrupt: (text: string) => call<{ id: string; reopened?: boolean }>(`${ev}/disruptions`, { method: "POST", body: JSON.stringify({ text }) }),
-  choose: (sid: string) => call<{ status: string; outbox: Message[] }>(`${ev}/scenarios/${encodeURIComponent(sid)}/choose`, { method: "POST" }),
+  setup: () => call<EventState>(`${ev()}/setup`, { method: "POST", body: "{}" }),
+  reset: () => call<EventState>(`${ev()}/reset`, { method: "POST" }),
+  disrupt: (text: string) => call<{ id: string; reopened?: boolean }>(`${ev()}/disruptions`, { method: "POST", body: JSON.stringify({ text }) }),
+  choose: (sid: string) => call<{ status: string; outbox: Message[] }>(`${ev()}/scenarios/${encodeURIComponent(sid)}/choose`, { method: "POST" }),
   approve: (ids: string[]) =>
-    call<{ approved: Message[] }>(`${ev}/outbox/approve`, { method: "POST", body: JSON.stringify({ ids }) }),
-  venues: (disruptionId: string) => call<Venues>(`${ev}/venues?disruption=${encodeURIComponent(disruptionId)}`),
+    call<{ approved: Message[] }>(`${ev()}/outbox/approve`, { method: "POST", body: JSON.stringify({ ids }) }),
+  venues: (disruptionId: string) => call<Venues>(`${ev()}/venues?disruption=${encodeURIComponent(disruptionId)}`),
   /** Multipart upload, so no JSON content-type here. */
   async analyze(files: File[]): Promise<{ status: string; state: EventState; questions?: { prompt: string; options: string[] }[] }> {
     const form = new FormData();
     files.forEach((f) => form.append("files", f, f.name));
     let res: Response;
     try {
-      res = await fetch(`${API}${ev}/analyze`, { method: "POST", body: form });
+      res = await fetch(`${API}${ev()}/analyze`, { method: "POST", body: form });
     } catch {
       throw new ApiError(friendlyError(0, ""), `analyze: server unreachable at ${API}`);
     }
@@ -107,24 +121,27 @@ export const api = {
     return body;
   },
   answer: (text: string, disruption?: string) =>
-    call<{ status: string; outbox: Message[] }>(`${ev}/answer`, { method: "POST", body: JSON.stringify({ text, disruption }) }),
+    call<{ status: string; outbox: Message[] }>(`${ev()}/answer`, { method: "POST", body: JSON.stringify({ text, disruption }) }),
   setAction: (id: string, done: boolean) =>
-    call<unknown>(`${ev}/actions/${encodeURIComponent(id)}`, { method: "POST", body: JSON.stringify({ done }) }),
+    call<unknown>(`${ev()}/actions/${encodeURIComponent(id)}`, { method: "POST", body: JSON.stringify({ done }) }),
   decide: (did: string, kind: "changes_requested" | "rejected", option: string, note = "") =>
-    call<unknown>(`${ev}/problems/${encodeURIComponent(did)}/decision`, { method: "POST", body: JSON.stringify({ kind, option, note }) }),
+    call<unknown>(`${ev()}/problems/${encodeURIComponent(did)}/decision`, { method: "POST", body: JSON.stringify({ kind, option, note }) }),
   relax: (did: string, body: { budget_eur?: number; capacity_slack?: number }) =>
-    call<{ scored: { feasible: boolean }[] }>(`${ev}/problems/${encodeURIComponent(did)}/relax`, { method: "POST", body: JSON.stringify(body) }),
+    call<{ scored: { feasible: boolean }[] }>(`${ev()}/problems/${encodeURIComponent(did)}/relax`, { method: "POST", body: JSON.stringify(body) }),
   replan: (did: string, note: string) =>
-    call<{ scored: { feasible: boolean }[] }>(`${ev}/problems/${encodeURIComponent(did)}/replan`, { method: "POST", body: JSON.stringify({ note }) }),
+    call<{ scored: { feasible: boolean }[] }>(`${ev()}/problems/${encodeURIComponent(did)}/replan`, { method: "POST", body: JSON.stringify({ note }) }),
   editMessage: (id: string, subject: string, body: string) =>
-    call<Message>(`${ev}/outbox/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify({ subject, body }) }),
+    call<Message>(`${ev()}/outbox/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify({ subject, body }) }),
   whatif: (body: { budget_eur?: number; attendees?: number; delay_node?: string; delay_minutes?: number }) =>
-    call<WhatIf>(`${ev}/whatif`, { method: "POST", body: JSON.stringify(body) }),
+    call<WhatIf>(`${ev()}/whatif`, { method: "POST", body: JSON.stringify(body) }),
   setBudget: (remaining_eur: number) =>
-    call<EventState>(`${ev}/budget`, { method: "POST", body: JSON.stringify({ remaining_eur }) }),
-  confirmSetup: () => call<EventState>(`${ev}/setup/confirm`, { method: "POST" }),
+    call<EventState>(`${ev()}/budget`, { method: "POST", body: JSON.stringify({ remaining_eur }) }),
+  listEvents: () => call<{ id: string; title: string; problems: number; setup: string; replay: boolean }[]>("/api/events"),
+  createEvent: (id: string, title: string) =>
+    call<EventState>(`/api/events/${encodeURIComponent(id)}/create`, { method: "POST", body: JSON.stringify({ title }) }),
+  confirmSetup: () => call<EventState>(`${ev()}/setup/confirm`, { method: "POST" }),
   demoFiles: () => call<{ name: string; bytes: number }[]>("/api/demo-files"),
   demoFileUrl: (name: string) => `${API}/api/demo-files/${encodeURIComponent(name)}`,
-  fileUrl: (name: string) => `${API}${ev}/files/${encodeURIComponent(name)}`,
-  streamUrl: () => `${API}${ev}/stream`,
+  fileUrl: (name: string) => `${API}${ev()}/files/${encodeURIComponent(name)}`,
+  streamUrl: () => `${API}${ev()}/stream`,
 };

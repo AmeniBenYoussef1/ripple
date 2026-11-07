@@ -1,7 +1,7 @@
 // The four pages: Home, Event workspace, Outbox, Settings.
 import { CalendarDays, ChevronRight, Inbox, MapPin, Plus, RotateCcw, Server, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { API, EVENT_ID } from "./api";
+import { API, getEvent } from "./api";
 import { AgentsCard, LiveFeed, OutboxCard, PlanCard, RecoveryPlan } from "./components/cards";
 import { useReport } from "./components/Shell";
 import { BehindTheScenes, ProblemSummary } from "./components/summary";
@@ -208,7 +208,7 @@ export function SettingsPage() {
             <dt>Change it</dt><dd>Set <code>DEMO_MODE</code> in <code>backend/.env</code>, then restart the server</dd>
             <dt>Venue search area</dt><dd>{state.search_area || "not set"}</dd>
             <dt>API</dt><dd>{API}</dd>
-            <dt>Event id</dt><dd>{EVENT_ID}</dd>
+            <dt>Event id</dt><dd>{getEvent()}</dd>
           </dl>
         </section>
         <div className="span-all"><BehindTheScenes view={undefined} open /></div>

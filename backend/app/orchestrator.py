@@ -92,7 +92,18 @@ class Event:
 
     @property
     def files_dir(self) -> Path:
+        """Files Ripple builds for this event (.ics, .csv)."""
         return self.path.parent / self.id / "files"
+
+    @property
+    def inputs_dir(self) -> Path:
+        """The organizer's uploaded files, kept so code can read recipients and participants from them."""
+        return self.path.parent / self.id / "inputs"
+
+    @property
+    def data_dir(self) -> Path:
+        """Where this event's files are: its uploads, or the CodeSprint demo files."""
+        return self.inputs_dir if self.data.get("inputs") else DATA
 
     def set_model(self, model: EventModel) -> None:
         self.data["model"] = model.model_dump(mode="json", by_alias=True)
@@ -102,24 +113,54 @@ class Event:
         self.path.write_text(json.dumps(self.data, indent=2, default=str) + "\n", encoding="utf-8")
 
 
-def new_event(event_id: str, model_path: Path = GENERATED_MODEL, events_dir: Path = EVENTS,
-              search_area: str = "") -> Event:
-    """Start (or reset) an event from a saved model file."""
+def new_event(event_id: str, model_path: Optional[Path] = GENERATED_MODEL, events_dir: Path = EVENTS,
+              search_area: str = "", title: str = "") -> Event:
+    """Start (or reset) an event from a saved model file, or blank (model_path=None) until it is analyzed."""
     if not re.fullmatch(r"[a-zA-Z0-9_-]{1,64}", event_id):
         raise OrchestratorError("event id: use 1-64 letters, digits, '-' or '_'")
-    if not model_path.exists():
-        raise OrchestratorError(f"no saved event model at {model_path}; run scripts/try_setup.py first")
-    model = EventModel.model_validate(json.loads(model_path.read_text(encoding="utf-8")))
+    if model_path is None:
+        model = EventModel(event_id=event_id, title=title or event_id)
+    else:
+        if not model_path.exists():
+            raise OrchestratorError(f"no saved event model at {model_path}; run scripts/try_setup.py first")
+        model = EventModel.model_validate(json.loads(model_path.read_text(encoding="utf-8")))
     ev = Event(event_id, events_dir / f"{event_id}.json",
-               {"event_id": event_id, "search_area": search_area, "model": None,
+               {"event_id": event_id, "title": title or model.title, "search_area": search_area, "model": None,
                 "history": [], "cache": {}, "costs": [], "setup": {"status": "not_analyzed"},
                 "plans": [], "log": []})
     shutil.rmtree(ev.files_dir.parent, ignore_errors=True)
     ev.set_model(model)
     add_plan_version(ev, "Original plan, from your event files", None)
-    log(ev, "setup", "Event created from the saved event model")
+    log(ev, "setup", "Event created from the saved event model" if model_path else "Event created, waiting for its files")
     ev.save()
     return ev
+
+
+def reset_problems(event: Event) -> Event:
+    """Start the day over but keep the analysis: same files, same model, no problems (cheap retakes)."""
+    snap = event.data.get("analyzed_model")
+    if not snap:
+        raise OrchestratorError("this event has not been analyzed yet")
+    setup_cost = [c for c in event.data.get("costs", []) if c["disruption"] == "setup"]
+    event.data.update(model=snap, history=[], cache={}, costs=setup_cost, plans=[], log=[])
+    event.data["setup"]["confirmed"] = False
+    shutil.rmtree(event.files_dir, ignore_errors=True)
+    add_plan_version(event, "Original plan, from your event files", None)
+    log(event, "setup", "Event started over (same files and analysis)")
+    event.save()
+    return event
+
+
+def list_events(events_dir: Path = EVENTS) -> list[dict[str, Any]]:
+    out = []
+    for p in sorted(events_dir.glob("*.json")):
+        try:
+            d = json.loads(p.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            continue
+        out.append({"id": d.get("event_id", p.stem), "title": d.get("title") or (d.get("model") or {}).get("title") or p.stem,
+                    "problems": len(d.get("history", [])), "setup": (d.get("setup") or {}).get("status", "not_analyzed")})
+    return out
 
 
 # ---- Event log and plan versions (shown on the History page) ----------------------------
@@ -426,16 +467,17 @@ def replanner_message(model: EventModel, slice_ids: list[str], effects: dict, di
     )
 
 
-def newcomers_count(disruption: dict) -> int:
+def newcomers_count(disruption: dict, data_dir: Path = DATA) -> int:
     """People in late_registrations.csv when a group grew, else 0."""
-    if disruption["kind"] != "resized" or not LATE_REGISTRATIONS.exists():
+    late = data_dir / "late_registrations.csv"
+    if disruption["kind"] != "resized" or not late.exists():
         return 0
-    with open(LATE_REGISTRATIONS, encoding="utf-8") as f:
+    with open(late, encoding="utf-8") as f:
         return max(sum(1 for _ in f) - 1, 0)
 
 
 def coordinator_message(model: EventModel, slice_ids: list[str], effects: dict, disruption: dict,
-                        scenario: Optional[dict]) -> str:
+                        scenario: Optional[dict], data_dir: Path = DATA) -> str:
     nodes = {n.id: n for n in model.nodes}
     origin = disruption["node"]
     grew = disruption["kind"] == "resized"
@@ -446,8 +488,8 @@ def coordinator_message(model: EventModel, slice_ids: list[str], effects: dict, 
                      for i in slice_ids if not (grew and i == origin)],
     }
     rules = ""
-    if newcomers_count(disruption):
-        payload["newcomers"] = {"group": NEWCOMERS_GROUP, "count": newcomers_count(disruption),
+    if newcomers_count(disruption, data_dir):
+        payload["newcomers"] = {"group": NEWCOMERS_GROUP, "count": newcomers_count(disruption, data_dir),
                                 "joining": nodes[origin].label}
         rules = (f"- The group {origin} grew. Do NOT message its existing members. Write one welcome message to "
                  f'the newcomers (group "{NEWCOMERS_GROUP}") and one to each supplier whose quantity changes.\n')
@@ -476,12 +518,12 @@ SETUP_MAX_FILES = 5                    # Cominty: at most 5 files per message
 SETUP_MAX_BYTES = 10 * 1024 * 1024     # generous for event files; the platform allows more
 
 
-def setup_message(n_files: int) -> str:
+def setup_message(n_files: int, event_id: str = "codesprint") -> str:
     return f"""Setup. Build the event model for this event from the {n_files} attached files.
 Reply with {{"event_model": {{...}}}} as described in the ripple-contracts skill.
 
 Conventions:
-- event_id "codesprint". Reuse the ids given in schedule.json for commitments and program items.
+- event_id "{event_id}". Reuse the ids given in schedule.json for commitments and program items.
 - The venue is a resource with id "venue_<name in snake_case>", with capacity and address in attrs.
 - Groups: one per audience that must be informed (attendees, speakers, each speaker with their own
   session, workshop participants, volunteers, the caterer). Ids start with "grp_". Put the real size
@@ -534,8 +576,11 @@ async def analyze_event(event: Event, files: list[tuple[str, bytes]], runner: Ru
             file_ids.append((await runner.client.chat.upload_file(data, filename=name)).id)
             await runner.stage("setup_uploaded", {"file": name})
     # live runs are recorded apart, so they never overwrite the recording Replay relies on
-    slug = "setup" if runner.demo else "setup-live"
-    res = await runner.call(slug, "setup_analyst", setup_message(len(files)), thread_name="Event setup",
+    # Replay: the CodeSprint recording ("setup"), or this event's own live recording ("setup-live")
+    slug = ("setup" if (runner.fixtures_dir / "setup").exists() else "setup-live") if runner.demo else "setup-live"
+    message = setup_message(len(files)) if runner.demo and slug == "setup" and event.id == "demo" \
+        else setup_message(len(files), event.id)
+    res = await runner.call(slug, "setup_analyst", message, thread_name=f"Event setup · {event.id}",
                             file_ids=file_ids or None, check=model_checker)
     if res.questions:
         q = [x.model_dump() for x in res.questions]
@@ -543,12 +588,19 @@ async def analyze_event(event: Event, files: list[tuple[str, bytes]], runner: Ru
         return {"status": "questions", "questions": q}
     model = res.data.event_model
     event.set_model(model)
-    event.data.update(history=[], cache={}, costs=[], plans=[])
+    event.data.update(history=[], cache={}, costs=[], plans=[], analyzed_model=event.data["model"],
+                      title=model.title or event.data.get("title", event.id))
+    # keep the uploads: recipients, participant lists and the people file are read from them by code
+    shutil.rmtree(event.inputs_dir, ignore_errors=True)
+    event.inputs_dir.mkdir(parents=True, exist_ok=True)
+    for name, data in files:
+        (event.inputs_dir / Path(name).name).write_bytes(data)
+    event.data["inputs"] = [Path(n).name for n, _ in files]
     add_plan_version(event, "Original plan, from your event files", None)
     log(event, "setup", f"Event analyzed from {len(files)} files" + (" (recorded analysis)" if runner.demo else ""),
         files=[n for n, _ in files])
     add_cost(event, "setup", "impact_analyst", res.cost)
-    shutil.rmtree(event.files_dir.parent, ignore_errors=True)
+    shutil.rmtree(event.files_dir, ignore_errors=True)
     event.data["setup"] = {"status": "analyzed", "replay": runner.demo, "at": now_iso(),
                            "files": [{"name": n, "bytes": len(d)} for n, d in files],
                            "cost": str(res.cost), "thread_id": res.thread_id}
@@ -724,9 +776,10 @@ async def _coordinate(event: Event, entry: dict, scenario: Optional[dict], runne
     effects = entry["impact"]["effects"]
     slice_ids = routing["slices"].get("coordinator") or sorted(n for n, e in effects.items() if e in ("inform", "resize"))
     await runner.stage("agent_started", {"agent": "coordinator"})
-    file_ids = await runner.upload([DATA / "people.csv"])
+    people = event.data_dir / "people.csv"
+    file_ids = await runner.upload([people] if people.exists() else [])
     res = await runner.call(entry["fixture"], "coordinator",
-                            coordinator_message(model, slice_ids, effects, entry["disruption"], scenario),
+                            coordinator_message(model, slice_ids, effects, entry["disruption"], scenario, event.data_dir),
                             thread_name=f"{entry['text']} · Coordinator", file_ids=file_ids or None,
                             name=coordinator_name(scenario))
     if scenario is not None:   # the organizer's choice holds even if the Coordinator asks a question
@@ -799,7 +852,7 @@ async def _finish_coordination(event: Event, entry: dict, res: AgentResult, runn
     messages = []
     for i, m in enumerate(drafts, 1):
         # recipients come from the event files (code), the agent's "to" is only kept as a hint
-        r = resolve(model, m["group"], DATA)
+        r = resolve(model, m["group"], event.data_dir)
         messages.append(address({**m, "id": f"{entry['id']}-m{i}", "status": "draft", "to_hint": m.get("to", ""),
                                  "recipients": r["recipients"], "recipient_source": r["source"], "edits": []}))
     files = build_files(event, entry["id"], model, out["revised_schedule"], messages)
@@ -829,7 +882,9 @@ def build_files(event: Event, disruption_id: str, model: EventModel,
         name = f"{prefix}-revised_schedule.ics"
         (event.files_dir / name).write_text(build_ics(revised_schedule, model, date), encoding="utf-8", newline="")
         files.append({"name": name, "kind": "ics", "items": len(revised_schedule)})
-    text, people = build_attendee_csv(DATA / "participants.csv", model, messages, newcomers_csv=LATE_REGISTRATIONS)
+    participants = event.data_dir / "participants.csv"
+    text, people = (build_attendee_csv(participants, model, messages, newcomers_csv=event.data_dir / "late_registrations.csv")
+                    if participants.exists() else ("", 0))
     if people:
         name = f"{prefix}-attendee_update.csv"
         (event.files_dir / name).write_text(text, encoding="utf-8", newline="")

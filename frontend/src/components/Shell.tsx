@@ -15,6 +15,28 @@ export function Logo({ size = 30 }: { size?: number }) {
   );
 }
 
+function EventSwitcher() {
+  const { events, eventId, switchEvent, busy } = useRipple();
+  const nav = useNavigate();
+  const list = events.some((e) => e.id === eventId) ? events : [...events, { id: eventId, title: eventId, problems: 0, setup: "", replay: false }];
+  return (
+    <label className="event-switch">
+      <span className="eyebrow">Event</span>
+      <select className="text-input" value={eventId} disabled={busy} aria-label="Event"
+        onChange={async (e) => {
+          const v = e.target.value;
+          if (v === "__new") { nav("/setup?new=1"); return; }
+          await switchEvent(v);
+          const ev = events.find((x) => x.id === v);
+          nav(ev && ev.setup !== "analyzed" ? "/setup" : "/event");
+        }}>
+        {list.map((e) => <option key={e.id} value={e.id}>{e.title}{e.replay ? " (Replay)" : ""}</option>)}
+        <option value="__new">+ New event…</option>
+      </select>
+    </label>
+  );
+}
+
 export function Sidebar() {
   const { state } = useRipple();
   const drafts = state?.history.reduce((n, h) => n + (h.outbox ?? []).filter((m) => m.status === "draft").length, 0) ?? 0;
@@ -30,6 +52,7 @@ export function Sidebar() {
   return (
     <div className="side-col"><nav className="sidebar" aria-label="Main">
       <div className="side-brand"><Logo /><span>Ripple</span></div>
+      <EventSwitcher />
       <ul className="side-links">
         {links.map((l) => (
           <li key={l.to}>

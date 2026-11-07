@@ -27,13 +27,16 @@ from pydantic import BaseModel, Field
 from .agents import AgentOutputError
 from .geo import Geocoder, venue_pins
 from .whatif import simulate
-from .orchestrator import (set_budget, slugify, edit_message, replan_with, record_decision, relax_limits, set_action, answer_question, recorded_answers, recorded_options, DATA, EVENTS, FIXTURES, GENERATED_MODEL, SETUP_MAX_BYTES, Event, OrchestratorError,
+from .orchestrator import (list_events, reset_problems, set_budget, slugify, edit_message, replan_with, record_decision, relax_limits, set_action, answer_question, recorded_answers, recorded_options, DATA, EVENTS, FIXTURES, GENERATED_MODEL, SETUP_MAX_BYTES, Event, OrchestratorError,
                            Runner, analyze_event, approve_messages, choose_scenario, confirm_setup, demo_mode,
                            handle_disruption, load_event, new_event, total_cost)
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 DEFAULT_AREA = os.environ.get("RIPPLE_SEARCH_AREA", "Paris, France")
+# Events that always replay their recordings in fixtures/, even on a Live server (the CodeSprint demo).
+REPLAY_EVENTS = {e.strip() for e in os.environ.get("RIPPLE_REPLAY_EVENTS", "demo").split(",") if e.strip()}
+RECORDINGS = Path(__file__).resolve().parents[1] / "recordings"   # Live recordings of every other event
 FILE_TYPES = {".ics": "text/calendar", ".csv": "text/csv"}
 # the five fictional demo files, offered on the setup page ("Use the demo files")
 DEMO_FILES = ["participants.csv", "schedule.json", "catering_contract.txt", "people.csv", "budget.json"]
@@ -55,6 +58,7 @@ def replay_delay_from_env() -> tuple[float, float]:
 
 class SetupBody(BaseModel):
     search_area: Optional[str] = None
+    title: Optional[str] = Field(default=None, max_length=120)
 
 
 class DisruptionBody(BaseModel):
@@ -144,9 +148,18 @@ def sse(msg: dict[str, Any]) -> str:
 
 def create_app(events_dir: Path = EVENTS, fixtures_dir: Path = FIXTURES, model_path: Path = GENERATED_MODEL,
                demo: Optional[bool] = None, replay_delay: Optional[tuple[float, float]] = None,
-               geocoder: Optional[Geocoder] = None) -> FastAPI:
+               geocoder: Optional[Geocoder] = None, recordings_dir: Path = RECORDINGS,
+               replay_events: Optional[set[str]] = None) -> FastAPI:
     demo = demo_mode() if demo is None else demo
     replay_delay = replay_delay_from_env() if replay_delay is None else replay_delay
+    replay_events = REPLAY_EVENTS if replay_events is None else replay_events
+
+    def is_replay(event_id: str) -> bool:
+        return demo or event_id in replay_events
+
+    def recordings_for(event_id: str) -> Path:
+        """CodeSprint replays fixtures/; every other event has its own folder, so nothing is overwritten."""
+        return fixtures_dir if event_id in replay_events else recordings_dir / event_id
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -176,8 +189,9 @@ def create_app(events_dir: Path = EVENTS, fixtures_dir: Path = FIXTURES, model_p
             raise HTTPException(404, str(err)) from err
 
     def runner_for(event_id: str) -> Runner:
-        return Runner(client=app.state.client, demo=demo, fixtures_dir=fixtures_dir,
-                      replay_delay=replay_delay if demo else (0.0, 0.0),
+        replay = is_replay(event_id)
+        return Runner(client=app.state.client, demo=replay, fixtures_dir=recordings_for(event_id),
+                      replay_delay=replay_delay if replay else (0.0, 0.0),
                       on_event=lambda e: broker.publish(event_id, "agent", e),
                       on_stage=lambda name, payload: broker.publish(event_id, name, payload))
 
@@ -185,9 +199,12 @@ def create_app(events_dir: Path = EVENTS, fixtures_dir: Path = FIXTURES, model_p
         saved = sum((Decimal(h.get("saved_total", "0")) for h in event.data["history"]), Decimal(0))
         files = sorted(p.name for p in event.files_dir.glob("*")) if event.files_dir.exists() else []
         # Replay: which options have a recorded Coordinator reply (others are "Live mode only")
-        replayable = ({h["id"]: {"options": recorded_options(h, fixtures_dir), "answers": recorded_answers(h, fixtures_dir)}
-                       for h in event.data["history"]} if demo else None)
-        return {**event.data, "demo_mode": demo, "replayable": replayable, "total_cost": str(total_cost(event)),
+        rec = recordings_for(event.id)
+        replay = is_replay(event.id)
+        replayable = ({h["id"]: {"options": recorded_options(h, rec), "answers": recorded_answers(h, rec)}
+                       for h in event.data["history"]} if replay else None)
+        data = {k: v for k, v in event.data.items() if k != "analyzed_model"}
+        return {**data, "demo_mode": replay, "replayable": replayable, "total_cost": str(total_cost(event)),
                 "saved_total": str(saved), "files": files}
 
     async def guarded(event_id: str, work):
@@ -219,11 +236,32 @@ def create_app(events_dir: Path = EVENTS, fixtures_dir: Path = FIXTURES, model_p
     async def health() -> dict[str, Any]:
         return {"ok": True, "demo_mode": demo}
 
+    @app.get("/api/events")
+    async def events() -> list[dict[str, Any]]:
+        return [{**e, "replay": is_replay(e["id"])} for e in list_events(events_dir)]
+
+    @app.post("/api/events/{event_id}/create")
+    async def create(event_id: str, body: Optional[SetupBody] = None) -> dict[str, Any]:
+        """A new, empty event: it gets its model from its own files on the setup page."""
+        if event_id in replay_events:
+            raise HTTPException(400, f"{event_id!r} is reserved for the CodeSprint demo")
+        if (events_dir / f"{event_id}.json").exists():
+            raise HTTPException(409, f"an event called {event_id!r} already exists")
+        area = (body.search_area if body and body.search_area else None) or DEFAULT_AREA
+        title = body.title if body and body.title else event_id
+        try:
+            event = new_event(event_id, model_path=None, events_dir=events_dir, search_area=area, title=title)
+        except OrchestratorError as err:
+            raise HTTPException(400, str(err)) from err
+        return state(event)
+
     @app.post("/api/events/{event_id}/setup")
     async def setup(event_id: str, body: Optional[SetupBody] = None) -> dict[str, Any]:
         area = (body.search_area if body and body.search_area else None) or DEFAULT_AREA
         try:
-            event = new_event(event_id, model_path=model_path, events_dir=events_dir, search_area=area)
+            # the CodeSprint demo starts from its saved model; any other event starts blank
+            event = new_event(event_id, model_path=model_path if event_id in replay_events else None,
+                              events_dir=events_dir, search_area=area)
         except OrchestratorError as err:
             raise HTTPException(400, str(err)) from err
         broker.clear(event_id)
@@ -231,8 +269,13 @@ def create_app(events_dir: Path = EVENTS, fixtures_dir: Path = FIXTURES, model_p
 
     @app.post("/api/events/{event_id}/reset")
     async def reset(event_id: str) -> dict[str, Any]:
-        area = get_event(event_id).data.get("search_area") or DEFAULT_AREA
-        event = new_event(event_id, model_path=model_path, events_dir=events_dir, search_area=area)
+        current = get_event(event_id)
+        area = current.data.get("search_area") or DEFAULT_AREA
+        if event_id not in replay_events and current.data.get("analyzed_model"):
+            event = reset_problems(current)          # same files and analysis: cheap retakes
+        else:
+            event = new_event(event_id, model_path=model_path if event_id in replay_events else None,
+                              events_dir=events_dir, search_area=area, title=current.data.get("title", ""))
         broker.clear(event_id)
         broker.publish(event_id, "reset", {})
         return state(event)
@@ -301,7 +344,8 @@ def create_app(events_dir: Path = EVENTS, fixtures_dir: Path = FIXTURES, model_p
         except ValueError as err:
             raise HTTPException(400, str(err)) from err
         for a in out["apply"]:   # Replay can only apply a problem that was recorded
-            a["replayable"] = a["kind"] != "problem" or not demo or (fixtures_dir / slugify(a["text"])).is_dir()
+            a["replayable"] = (a["kind"] != "problem" or not is_replay(event_id)
+                               or (recordings_for(event_id) / slugify(a["text"])).is_dir())
         return out
 
     @app.post("/api/events/{event_id}/budget")
