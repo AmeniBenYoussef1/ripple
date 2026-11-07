@@ -261,3 +261,9 @@ def test_visitor_id_in_a_header_works_without_cookies(tmp_path):
         assert a.get(f"/api/events/{eid}", headers=me).status_code == 200
         assert b.get(f"/api/events/{eid}?visitor={'ab' * 16}").status_code == 200       # links and live updates
         assert b.get(f"/api/events/{eid}").status_code == 404
+
+
+def test_developer_details_are_off_by_default(tmp_path):
+    app, _, _ = make(tmp_path)
+    with TestClient(app) as c:
+        assert c.post("/api/visitor/sample").json()["dev_info"] is False   # RIPPLE_SHOW_DEV_INFO unset

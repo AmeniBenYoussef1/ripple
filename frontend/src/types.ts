@@ -165,6 +165,8 @@ export interface EventState {
   setup?: SetupInfo;
   plans?: PlanVersion[];
   log?: LogItem[];
+  /** RIPPLE_SHOW_DEV_INFO on the server: show the server address, event id and how to switch modes */
+  dev_info?: boolean;
   /** Replay only: what is recorded per problem (anything else is Live mode only). */
   replayable?: Record<string, { options: string[]; answers: string[] }> | null;
 }

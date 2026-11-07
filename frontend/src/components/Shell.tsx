@@ -5,6 +5,7 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { ThemeToggle } from "../theme";
 import { useRipple } from "../store";
 import { money } from "../view";
+import { ModeLabel } from "./summary";
 
 export function Logo({ size = 30 }: { size?: number }) {
   return (
@@ -85,11 +86,7 @@ export function StatsBar() {
       <Stat label="Cost" value={money(state.total_cost)} title="Sum of Cominty Result cost.total" />
       <Stat label="≈ Saved" value={`${money(state.saved_total)}${est ? " est." : ""}`}
         title={est ? "Partly estimated from recorded runs" : "Average real cost of the agents that slept"} />
-      <div className="mode" role="group" aria-label="Agent mode"
-        title="Set by DEMO_MODE in backend/.env when the server starts">
-        <span className={`mode-opt ${state.demo_mode ? "" : "on"}`}>Live</span>
-        <span className={`mode-opt ${state.demo_mode ? "on" : ""}`}>Replay</span>
-      </div>
+      <ModeLabel replay={state.demo_mode} />
     </div>
   );
 }

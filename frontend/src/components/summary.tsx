@@ -61,6 +61,18 @@ export function ProblemSummary({ view, state }: { view?: View; state: EventState
 const usd = (v: string | number | null | undefined) => (v == null || v === "" ? "—" : `$${Number(v).toFixed(3)}`);
 
 /** Technical details for the curious (and for the jury): runs, skips, cost, savings, mode. */
+/** How this event's agents run: a label, not a control (the mode is set on the server). */
+export function ModeLabel({ replay, short = false }: { replay: boolean; short?: boolean }) {
+  return (
+    <span className={`mode-label ${replay ? "replay" : "live"}`}>
+      <span className="mode-dot" aria-hidden="true" />
+      {replay
+        ? (short ? "Replay" : "Replay — recorded live run, $0 spent now")
+        : (short ? "Live" : "Live — real Cominty agents")}
+    </span>
+  );
+}
+
 export function BehindTheScenes({ view, open = false }: { view?: View; open?: boolean }) {
   const { state, errorDetail } = useRipple();
   if (!state) return null;
@@ -81,19 +93,16 @@ export function BehindTheScenes({ view, open = false }: { view?: View; open?: bo
       <div className="behind-grid">
         <dl className="meta">
           <dt>Mode</dt>
-          <dd>
-            <span className="mode" title="Set by DEMO_MODE in backend/.env when the server starts">
-              <span className={`mode-opt ${replay ? "" : "on"}`}>Live</span>
-              <span className={`mode-opt ${replay ? "on" : ""}`}>Replay</span>
-            </span>
-          </dd>
+          <dd><ModeLabel replay={replay} /></dd>
           <dt>Agent runs</dt><dd>{state.costs.length} in total{view?.routing ? ` · this problem: ${view.routing.run.map(title).join(", ") || "none"}` : ""}</dd>
           <dt>Cost</dt><dd>{usd(state.total_cost)} total{view?.costs ? ` · ${usd(thisCost)} this problem` : ""}
-            {replay && <span className="tag tag-replay">recorded — $0 spent now</span>}</dd>
+</dd>
           {errorDetail && <><dt>Last error</dt><dd className="tech">{errorDetail}</dd></>}
-          <dt>Server</dt><dd className="tech">{API}</dd>
-          <dt>Event id</dt><dd className="tech">{getEvent()}</dd>
-          <dt>Switch mode</dt><dd>Set <code>DEMO_MODE=true</code> (Replay) or <code>false</code> (Live) in <code>backend/.env</code>, then restart the server. The CodeSprint demo always replays.</dd>
+          {state.dev_info && <>   {/* local development only (RIPPLE_SHOW_DEV_INFO=true) */}
+            <dt>Server</dt><dd className="tech">{API}</dd>
+            <dt>Event id</dt><dd className="tech">{getEvent()}</dd>
+            <dt>Switch mode</dt><dd>Set <code>DEMO_MODE=true</code> (Replay) or <code>false</code> (Live) in <code>backend/.env</code>, then restart the server. The CodeSprint demo always replays.</dd>
+          </>}
           <dt>≈ Saved</dt><dd>{usd(state.saved_total)}{est ? " (partly estimated from recorded runs)" : ""} by not waking agents a problem didn't need</dd>
         </dl>
         {view && <div>

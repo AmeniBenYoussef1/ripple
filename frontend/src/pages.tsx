@@ -3,7 +3,7 @@ import { CalendarDays, ChevronRight, Inbox, MapPin, Plus, RotateCcw, Server, Sun
 import { useNavigate } from "react-router-dom";
 import { AgentsCard, LiveFeed, OutboxCard, PlanCard, RecoveryPlan } from "./components/cards";
 import { useReport } from "./components/Shell";
-import { BehindTheScenes, ProblemSummary } from "./components/summary";
+import { BehindTheScenes, ModeLabel, ProblemSummary } from "./components/summary";
 import { VenueCard } from "./components/VenueMap";
 import { CardHead, Pill, Stepper, phaseOf, statusText } from "./components/ui";
 import { RippleMap } from "./RippleMap";
@@ -218,12 +218,12 @@ export function SettingsPage() {
   if (!state) return null;
   return (
     <div className="page">
-      <header className="ws-head"><div className="ws-title"><h1>Settings</h1><p className="sub">How this Ripple instance is set up. Values come from the backend.</p></div></header>
+      <header className="ws-head"><div className="ws-title"><h1>Settings</h1><p className="sub">How this event is set up in Ripple.</p></div></header>
       <div className="settings-grid">
         <section className="card">
           <CardHead icon={<Server size={18} />} title="Agents" />
           <dl className="meta">
-            <dt>Mode</dt><dd>{state.demo_mode ? "Replay: recorded agent runs, no Cominty credits used" : "Live: Cominty agents"}</dd>
+            <dt>Mode</dt><dd><ModeLabel replay={state.demo_mode} /></dd>
             <dt>Venue search area</dt><dd>{state.search_area || "not set"}</dd>
           </dl>
         </section>

@@ -45,6 +45,8 @@ REPLAY_EVENTS = {e.strip() for e in os.environ.get("RIPPLE_REPLAY_EVENTS", "demo
 RECORDINGS = DATA_ROOT / "recordings"   # Live recordings of every other event (RIPPLE_DATA_DIR)
 SAMPLE_PACK = Path(__file__).resolve().parents[1] / "sample_pack"   # fictional files visitors can download
 PUBLIC = os.environ.get("RIPPLE_PUBLIC", "false").strip().lower() in ("1", "true", "yes")
+# server address, event id and how to switch modes: for local development only (off when deployed)
+DEV_INFO = os.environ.get("RIPPLE_SHOW_DEV_INFO", "false").strip().lower() in ("1", "true", "yes")
 COOKIE = "ripple_visitor"
 OWNER_COOKIE = "ripple_owner"
 # Plain words for agent failures on the visitor's own files and problems
@@ -332,7 +334,7 @@ def create_app(events_dir: Path = EVENTS, fixtures_dir: Path = FIXTURES, model_p
         replayable = ({h["id"]: {"options": recorded_options(h, rec), "answers": recorded_answers(h, rec)}
                        for h in event.data["history"]} if replay else None)
         data = {k: v for k, v in event.data.items() if k != "analyzed_model"}
-        return {**data, "demo_mode": replay, "replayable": replayable, "visitor": is_visitor_event(event.id), "total_cost": str(total_cost(event)),
+        return {**data, "demo_mode": replay, "dev_info": DEV_INFO, "replayable": replayable, "visitor": is_visitor_event(event.id), "total_cost": str(total_cost(event)),
                 "saved_total": str(saved), "files": files}
 
     async def guarded(event_id: str, work, agent_error: Optional[str] = None):
