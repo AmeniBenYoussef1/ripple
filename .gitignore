@@ -12,8 +12,5 @@ backend/events/
 backend/recordings/
 screenshots/
 
-# local only: test event files and assistant notes/config (kept on disk, never committed)
+# local test event files (kept on disk, never committed)
 hercode_event/
-CLAUDE.md
-CLAUDE.local.md
-.claude/
