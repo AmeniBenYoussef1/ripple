@@ -32,7 +32,7 @@ def verdict(s: dict) -> str:
     v = " ".join(s["violations"])
     if "over remaining budget" in v:
         return "over budget"
-    if "capacity" in v:
+    if "too small" in v or "capacity" in v:
         return "too small"
     return "not possible"
 
@@ -117,7 +117,10 @@ def simulate(event_data: dict[str, Any], budget_eur: Optional[float] = None, att
     if entry is not None:
         slack = entry.get("relaxed", {}).get("capacity_slack", 0)
         scen = [Scenario.model_validate(s) for s in entry["scenarios"]]
-        revised = [s.model_copy(update={"attendees": attendees}) if attendees and s.attendees is not None else s for s in scen]
+        # everyone on site changes by the same number as the attendees (speakers and volunteers stay)
+        grow = (attendees - size_now) if attendees and isinstance(size_now, int) else 0
+        revised = [s.model_copy(update={"attendees": s.attendees + grow}) if grow and s.attendees is not None else s
+                   for s in scen]
         b_what = budget_node(what)
         now = [x.to_dict() for x in score(scen, budget_now, slack)]
         later = [x.to_dict() for x in score(revised, b_what.attrs["remaining_eur"] if b_what else None, slack)]

@@ -91,6 +91,7 @@ class Scenario(BaseModel):
     within_opening_hours: bool = True
     burdens: list[GroupBurden] = Field(default_factory=list)
     to_confirm: list[str] = Field(default_factory=list)
+    on_site: Optional[dict[str, Any]] = None  # set in code: {"total", "parts"} (see headcount.py)
 
 
 # ---- Resource Finder and Coordinator outputs (see skills/ripple-contracts/reference.md) ----

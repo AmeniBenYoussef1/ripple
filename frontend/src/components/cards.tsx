@@ -138,6 +138,7 @@ function ScoreLines({ s }: { s: Scored }) {
       <li><span>Total impact</span><strong>{s.total_burden_person_min.toLocaleString("en-GB")} person-min <em>est.</em></strong></li>
       <li><span>Extra cost</span><strong>{costText(s.extra_cost_eur)}</strong></li>
       <li><span>Spare seats</span><strong>{s.spare_seats ?? "unknown"}</strong></li>
+      {s.on_site && <li className="wide"><span>Who needs a seat</span><strong>{s.on_site}</strong></li>}
       <li><span>Still to confirm</span><strong>{s.unconfirmed}</strong></li>
       {s.tied && <li className="tie"><span>Tie</span><strong>Same score as {s.tied_with.join(", ")}: your call</strong></li>}
     </ul>

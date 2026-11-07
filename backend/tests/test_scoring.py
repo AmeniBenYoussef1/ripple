@@ -18,7 +18,7 @@ def test_capacity_violation_is_greyed_out_last():
     ranked = score(demo_scenarios())
     a = ranked[-1]
     assert a.scenario.id == "A" and not a.feasible and a.rank is None
-    assert "capacity 160 for 200 people" in a.explanation[0]
+    assert "too small: 200 people on site, 160 seats" in a.explanation[0]
 
 
 def test_protecting_worst_group_beats_cheaper_option():

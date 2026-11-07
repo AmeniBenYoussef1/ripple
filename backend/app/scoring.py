@@ -47,6 +47,7 @@ class ScoredScenario:
             "worst_burden_min": self.worst_burden, "total_burden_person_min": self.total_burden,
             "extra_cost_eur": self.extra_cost, "unconfirmed": self.unconfirmed,
             "rank": self.rank, "explanation": self.explanation, "spare_seats": self.spare,
+            "on_site": on_site_line(self.scenario) or None,
             "tied": bool(self.tied_with), "tied_with": self.tied_with,
         }
 
@@ -55,7 +56,8 @@ def hard_violations(s: Scenario, remaining_budget: float | None, capacity_slack:
     """capacity_slack: how many people the organizer accepts to place elsewhere (a relaxed limit)."""
     v = []
     if s.capacity is not None and s.attendees is not None and s.capacity < s.attendees - capacity_slack:
-        v.append(f"capacity {s.capacity} for {s.attendees} people")
+        elsewhere = f" ({capacity_slack} placed elsewhere)" if capacity_slack else ""
+        v.append(f"too small: {s.attendees} people on site{elsewhere}, {s.capacity} seats")
     if s.extra_cost_eur is not None and remaining_budget is not None and s.extra_cost_eur > remaining_budget:
         v.append(f"extra cost EUR {s.extra_cost_eur:g} over remaining budget EUR {remaining_budget:g}")
     if not s.accessibility_ok:
@@ -63,6 +65,16 @@ def hard_violations(s: Scenario, remaining_budget: float | None, capacity_slack:
     if not s.within_opening_hours:
         v.append("schedule outside the venue's opening hours")
     return v
+
+
+def on_site_line(s: Scenario) -> str:
+    """'163 people on site (150 attendees, 3 speakers, mentors and jury, 10 volunteers), 150 seats'."""
+    if s.attendees is None or s.capacity is None:
+        return ""
+    parts = (s.on_site or {}).get("parts") or []
+    listed = ", ".join(f"{p['count']} {p['label']}" for p in parts)
+    detail = f" ({listed})" if len(parts) > 1 else ""
+    return f"{s.attendees} people on site{detail}, {s.capacity} seats"
 
 
 def burden_per_person(minutes: int, must_replan: bool) -> int:
@@ -97,6 +109,7 @@ def score(scenarios: list[Scenario], remaining_budget: float | None = None,
             f"worst impact: {x.worst_group or 'nobody'}, {x.worst_burden} min per person",
             f"total impact: {x.total_burden} person-minutes",
             "extra cost: to quote" if x.extra_cost is None else f"extra cost: EUR {x.extra_cost:g}",
+            on_site_line(x.scenario),
             f"spare seats: {x.spare}" if x.spare is not None else "spare seats: unknown",
             f"still to confirm: {x.unconfirmed}",
         ]
@@ -105,4 +118,5 @@ def score(scenarios: list[Scenario], remaining_budget: float | None = None,
     for x in scored:
         if not x.feasible:
             x.explanation = ["fails a hard limit: " + "; ".join(x.violations)]
+        x.explanation = [e for e in x.explanation if e]
     return feasible + [x for x in scored if not x.feasible]

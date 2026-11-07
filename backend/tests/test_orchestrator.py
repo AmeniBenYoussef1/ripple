@@ -110,6 +110,10 @@ def test_choose_runs_coordinator_and_updates_model(setup):
     out = run(choose_scenario(event, "B", runner))
     assert [m["group"] for m in out["outbox"]] == ["grp_attendees", "grp_caterer"]
     assert all(m["status"] == "draft" for m in out["outbox"])
+    # the map keeps the lost hall at its centre, with the chosen venue as a badge
+    hall = next(n for n in event.model.nodes if n.id == "venue_main_hall")
+    entry = event.data["history"][-1]
+    assert entry["origin_label"] == hall.attrs["original_label"] and entry["moving_to"] == hall.label
     assert [m["id"] for m in out["outbox"]] == ["d1-the-hall-just-cancelled-m1", "d1-the-hall-just-cancelled-m2"]
     files = {f["name"]: f for f in out["files"]}
     assert files["d1-attendee_update.csv"]["rows"] == 200      # only attendees are in participants.csv
@@ -381,13 +385,15 @@ def test_relax_capacity_and_budget_rescore_in_code(setup):
     event, runner, _, _ = setup
     one = run(handle_disruption(event, T1, runner))
     a = next(s for s in one["scored"] if s["id"] == "A")
-    assert not a["feasible"] and "capacity 160 for 200 people" in a["violations"][0]
-    entry = relax_limits(event, one["id"], capacity_slack=40)
+    # everyone on site counts: 200 attendees + 15 speakers and volunteers (people.csv)
+    assert not a["feasible"] and "too small: 215 people on site, 160 seats" in a["violations"][0]
+    assert relax_limits(event, one["id"], capacity_slack=40)["scored"][-1]["id"] == "A"      # still too small
+    entry = relax_limits(event, one["id"], capacity_slack=55)
     assert next(s for s in entry["scored"] if s["id"] == "A")["feasible"]
     entry = relax_limits(event, one["id"], budget_eur=0)
-    assert entry["relaxed"] == {"capacity_slack": 40, "budget_eur": 0}
+    assert entry["relaxed"] == {"capacity_slack": 55, "budget_eur": 0}
     assert next(n for n in event.model.nodes if n.id == "budget").attrs["remaining_eur"] == 0
-    assert [l["kind"] for l in event.data["log"]].count("constraint") == 2
+    assert [l["kind"] for l in event.data["log"]].count("constraint") == 3
     with pytest.raises(OrchestratorError, match="negative"):
         relax_limits(event, one["id"], budget_eur=-5)
 

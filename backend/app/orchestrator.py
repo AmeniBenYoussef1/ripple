@@ -35,6 +35,7 @@ from pydantic import BaseModel
 from .agents import (AgentResult, CandidatesReply, CoordinatorReply, DisruptionReply,
                      EventModelReply, EventCallback, Question, ScenariosReply, call_agent)
 from .exports import NEWCOMERS_GROUP, build_attendee_csv, build_ics
+from .headcount import on_site
 from .impact_engine import propagate, route
 from .models import EventModel, NodeType, Scenario
 from .recipients import address, member_groups, one_message_per_person, resolve
@@ -450,7 +451,7 @@ def finder_message(model: EventModel, finder_nodes: list[str], effects: dict, de
                    new_size: Optional[int], area: str, data_dir: Optional[Path] = None) -> str:
     nodes = {n.id: n for n in model.nodes}
     needs = [{"resource": nodes[r].model_dump(mode="json"), "problem": effects[r],
-              "requirements": {"min_capacity": needed_capacity(model, r, new_size), "date": event_date(model, data_dir),
+              "requirements": {"min_capacity": on_site(needed_capacity(model, r, new_size), data_dir).total, "date": event_date(model, data_dir),
                                "area": area, "max_extra_cost_eur": remaining_budget(model)}}
              for r in finder_nodes]
     return (
@@ -711,7 +712,7 @@ async def handle_disruption(event: Event, text: str, runner: Runner, area: Optio
     elif "replanner" in decision.cached:
         scenarios = [Scenario.model_validate(s) for s in cached_output("replanner")["scenarios"]]
 
-    scenario_dicts, scenarios = settle(model, scenarios, candidates)
+    scenario_dicts, scenarios = settle(model, scenarios, candidates, event.data_dir)
     scored = score(scenarios, remaining_budget(model))             # code
     if scenarios:
         await runner.stage("scenarios", {"disruption_id": did, "scored": [x.to_dict() for x in scored]})
@@ -805,6 +806,12 @@ async def _coordinate(event: Event, entry: dict, scenario: Optional[dict], runne
                             thread_name=f"{entry['text']} · Coordinator", file_ids=file_ids or None,
                             name=coordinator_name(scenario))
     if scenario is not None:   # the organizer's choice holds even if the Coordinator asks a question
+        origin = next((n for n in model.nodes if n.id == entry["disruption"]["node"]), None)
+        if origin is not None and entry["disruption"]["kind"] == "lost":
+            # the map keeps the lost item at its centre, with a "moving to" badge
+            entry["origin_label"] = origin.label
+            entry["moving_to"] = (scenario.get("venue") or {}).get("name") or next(
+                (ch["replace_with"] for ch in scenario.get("changes", []) if ch.get("replace_with")), None)
         model = apply_scenario(model, entry["disruption"]["node"], entry["disruption"]["kind"],
                                Scenario.model_validate(scenario), (scenario.get("venue") or {}).get("name"))
         event.set_model(model)
@@ -1031,7 +1038,7 @@ async def replan_with(event: Event, disruption_id: str, note: str, runner: Runne
     add_cost(event, entry["id"], "replanner", res.cost)
     if res.data is None:
         raise OrchestratorError("the Replanner asked a question instead of proposing options")
-    entry["scenarios"], settled = settle(model, res.data.scenarios, entry.get("candidates", []))
+    entry["scenarios"], settled = settle(model, res.data.scenarios, entry.get("candidates", []), event.data_dir)
     entry["scored"] = [x.to_dict() for x in score(settled, remaining_budget(model),
                                                    entry.get("relaxed", {}).get("capacity_slack", 0))]
     entry["rejected"] = []
@@ -1098,11 +1105,18 @@ def add_members(model: EventModel, impact) -> None:
         i += 1
 
 
-def settle(model: EventModel, scenarios: list[Scenario], candidates: list[dict]) -> tuple[list[dict], list[Scenario]]:
-    """One room per venue option (see rooms.py); returns the stored dicts and the scenarios to score."""
+def settle(model: EventModel, scenarios: list[Scenario], candidates: list[dict],
+           data_dir: Optional[Path] = None) -> tuple[list[dict], list[Scenario]]:
+    """One room per venue option (see rooms.py); returns the stored dicts and the scenarios to score.
+    The capacity check counts everyone on site, from the files (headcount.py), not the agent's number."""
     gid = attendee_group(model)
     size = model.node(gid).attrs.get("size") if gid else None
-    dicts = settle_rooms([s.model_dump(mode="json") for s in scenarios], candidates, size)
+    here = on_site(size if isinstance(size, int) else None, data_dir)
+    dicts = [s.model_dump(mode="json") for s in scenarios]
+    if here.total is not None:
+        for d in dicts:
+            d["attendees"], d["on_site"] = here.total, here.to_dict()
+    dicts = settle_rooms(dicts, candidates, here.total)
     return dicts, [Scenario.model_validate(x) for x in dicts]
 
 

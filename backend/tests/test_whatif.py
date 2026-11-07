@@ -90,4 +90,4 @@ def test_apply_budget_rescores_open_problems_and_logs(client):
     budget = next(n for n in s["model"]["nodes"] if n["id"] == "budget")
     assert budget["attrs"]["remaining_eur"] == 4500
     assert s["log"][-1]["kind"] == "constraint" and "4500" in s["log"][-1]["text"]
-    assert verdict({"feasible": False, "rank": None, "violations": ["capacity 160 for 200 people"]}) == "too small"
+    assert verdict({"feasible": False, "rank": None, "violations": ["too small: 200 people on site, 160 seats"]}) == "too small"

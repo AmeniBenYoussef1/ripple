@@ -9,7 +9,7 @@ import { CardHead, Pill, Stepper, phaseOf, statusText } from "./components/ui";
 import { RippleMap } from "./RippleMap";
 import { useRipple } from "./store";
 import { useTheme } from "./theme";
-import type { EventModel } from "./types";
+import type { EventModel, View } from "./types";
 import { entryToView, peopleAffected, problemTitle } from "./view";
 
 function eventFacts(m: EventModel) {
@@ -111,6 +111,17 @@ export function HomePage() {
 
 // ---- Workspace -----------------------------------------------------------------------
 
+/** A lost item stays at the map centre under its own name; its replacement shows as a badge.
+ *  Problems saved before this was recorded fall back to the names kept on the model. */
+function centreOf(model: EventModel, view: View | null | undefined): { originLabel?: string; movingTo?: string } {
+  if (!view?.disruption || view.disruption.kind !== "lost") return {};
+  if (view.origin_label) return { originLabel: view.origin_label, movingTo: view.moving_to ?? undefined };
+  const node = model.nodes.find((n) => n.id === view.disruption!.node);
+  if (view.chosen && node?.attrs.original_label)
+    return { originLabel: String(node.attrs.original_label), movingTo: String(node.attrs.replaced_by ?? node.label) };
+  return {};
+}
+
 export function WorkspacePage() {
   const { state, view, busy, feed, select, selected } = useRipple();
   const rep = useReport();
@@ -168,7 +179,8 @@ export function WorkspacePage() {
                 <span><i className="sw sw-ok" />Handled</span>
               </div>
             } />
-          <RippleMap model={state.model} impact={view?.impact} resolved={view?.coordinator === "done" && !busy} animateKey={view?.id ?? "none"} />
+          <RippleMap model={state.model} impact={view?.impact} resolved={view?.coordinator === "done" && !busy} animateKey={view?.id ?? "none"}
+            {...centreOf(state.model, view)} />
         </section>
         <div className="span-7 col">{view && <PlanCard view={view} onNewProblem={rep.show} />}{view && <RecoveryPlan view={view} />}{view && <VenueCard view={view} />}</div>
         <div className="span-5 col">{view && <OutboxCard view={view} />}</div>

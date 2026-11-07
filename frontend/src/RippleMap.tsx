@@ -61,7 +61,10 @@ const CALM_COLUMNS: { title: string; types: string[]; sort?: (a: ModelNode, b: M
   { title: "People", types: ["group"], sort: (a, b) => Number(b.attrs.size ?? 0) - Number(a.attrs.size ?? 0) },
 ];
 
-function layout(model: EventModel, impact: Impact | undefined): Placed[] {
+const BADGE = "__moving_to";
+const BADGE_Y = CY + NODE_H / 2 + 20;   // the "moving to" badge, just under the centre
+
+function layout(model: EventModel, impact: Impact | undefined, badge = false): Placed[] {
   if (!impact) {
     // Nothing wrong yet: a calm overview in columns, read left to right like the event itself.
     const placed: Placed[] = [];
@@ -77,6 +80,9 @@ function layout(model: EventModel, impact: Impact | undefined): Placed[] {
   // Each affected item starts at the angle of the item it was reached from (short tree arrows),
   // then slides along its ring until it overlaps nothing already placed.
   const placed: Placed[] = [{ id: impact.origin, x: CX, y: CY, wave: 0 }];
+  if (badge) {   // keep the badge clear: two box-sized spaces side by side cover its width
+    placed.push({ id: BADGE, x: CX - 90, y: BADGE_Y - 8, wave: 0 }, { id: BADGE, x: CX + 90, y: BADGE_Y - 8, wave: 0 });
+  }
   const angle = new Map<string, number>();
   const out = new Map<string, Set<string>>();
   for (const e of model.edges) (out.get(e.from) ?? out.set(e.from, new Set()).get(e.from)!).add(e.to);
@@ -95,12 +101,18 @@ function layout(model: EventModel, impact: Impact | undefined): Placed[] {
         siblings.set(parent, n + 1);
         a0 += (n % 2 ? -1 : 1) * Math.ceil(n / 2) * 0.16;
       }
+      // the first free spot on the ring (or a slightly larger or smaller one); if the rings are full,
+      // the spot that overlaps the fewest boxes
       let spot = { x: CX + rx * Math.cos(a0), y: CY + ry * Math.sin(a0), a: a0 };
-      search: for (const scale of [1, 1.12, 0.9, 1.24]) {
+      let fewest = Infinity;
+      search: for (const scale of [1, 1.12, 0.9, 1.24, 1.36, 0.8, 1.5, 1.65]) {
         for (let step = 0; step <= 90; step++) {
           const a = a0 + (step % 2 ? 1 : -1) * Math.ceil(step / 2) * 0.07;
           const p = { x: CX + rx * scale * Math.cos(a), y: CY + ry * scale * Math.sin(a) };
-          if (inside(p.x, p.y) && !placed.some((q) => clash(p, q))) { spot = { ...p, a }; break search; }
+          if (!inside(p.x, p.y)) continue;
+          const hits = placed.filter((q) => clash(p, q)).length;
+          if (hits < fewest) { fewest = hits; spot = { ...p, a }; }
+          if (hits === 0) break search;
         }
       }
       angle.set(id, spot.a);
@@ -118,7 +130,7 @@ function layout(model: EventModel, impact: Impact | undefined): Placed[] {
     const sl = order.find((o) => !placed.some((q) => clash(o, q))) ?? order[0];
     placed.push({ id: nd.id, x: sl.x, y: sl.y, wave: -1 });
   });
-  return placed;
+  return placed.filter((p) => p.id !== BADGE);
 }
 
 /** Point where the line from a box centre towards (tx, ty) leaves the box. */
@@ -148,10 +160,12 @@ interface Props {
   impact?: Impact;
   resolved: boolean;
   animateKey: string;
+  originLabel?: string;   // the lost item keeps its name at the centre…
+  movingTo?: string;      // …and the chosen replacement shows as a badge under it
 }
 
-export function RippleMap({ model, impact, resolved, animateKey }: Props) {
-  const placed = useMemo(() => layout(model, impact), [model, impact]);
+export function RippleMap({ model, impact, resolved, animateKey, originLabel, movingTo }: Props) {
+  const placed = useMemo(() => layout(model, impact, !!movingTo), [model, impact, movingTo]);
   const pos = useMemo(() => new Map(placed.map((p) => [p.id, p])), [placed]);
   const nodes = useMemo(() => new Map(model.nodes.map((n) => [n.id, n])), [model]);
   const waves = impact?.waves.length ?? 0;
@@ -252,6 +266,7 @@ export function RippleMap({ model, impact, resolved, animateKey }: Props) {
           const isGroup = node.type === "group";
           const effect = impact?.effects[p.id];
           const size = typeof node.attrs.size === "number" ? ` · ${node.attrs.size}` : "";
+          const label = isOrigin && originLabel ? originLabel : node.label;
           let cls = "node idle";
           let sub = node.type.replace("_", " ");
           if (isOrigin) {
@@ -266,10 +281,10 @@ export function RippleMap({ model, impact, resolved, animateKey }: Props) {
           }
           return (
             <g key={p.id} className={`fade ${visible(p) || p.wave < 0 ? "on" : ""}`} transform={`translate(${p.x - NODE_W / 2} ${p.y - NODE_H / 2})`}>
-              <title>{`${node.label}${size}${node.source ? ` (from ${node.source})` : ""}`}</title>
+              <title>{`${label}${size}${node.source ? ` (from ${node.source})` : ""}`}</title>
               <rect width={NODE_W} height={NODE_H} rx={isGroup ? NODE_H / 2 : 10} className={cls} />
               {(() => {
-                const lines = twoLines(node.label + (isGroup ? size : ""));
+                const lines = twoLines(label + (isGroup ? size : ""));
                 const y0 = lines.length === 2 ? 17 : 23;
                 return (
                   <>
@@ -283,6 +298,18 @@ export function RippleMap({ model, impact, resolved, animateKey }: Props) {
             </g>
           );
         })}
+
+        {impact && movingTo && (() => {
+          const text = `→ moving to ${movingTo.length > 32 ? `${movingTo.slice(0, 31)}…` : movingTo}`;
+          const w = Math.max(120, text.length * 6.4 + 24);
+          return (
+            <g className={`fade ${shown >= 0 ? "on" : ""}`} transform={`translate(${CX - w / 2} ${BADGE_Y - 11})`}>
+              <title>{`Moving to ${movingTo}`}</title>
+              <rect width={w} height={22} rx={11} className="map-badge" />
+              <text x={w / 2} y={15} className="map-badge-text">{text}</text>
+            </g>
+          );
+        })()}
       </svg>
       <p className="map-caption">
         {impact

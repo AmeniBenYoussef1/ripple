@@ -84,6 +84,7 @@ export interface Scored {
   tied: boolean;
   tied_with: string[];
   spare_seats?: number | null;
+  on_site?: string | null;     // "163 people on site (150 attendees, ...), 200 seats"
 }
 
 export interface Message {
@@ -127,6 +128,8 @@ export interface Entry {
   at: string;
   status: "ready" | "questions";
   disruption?: Disruption;
+  origin_label?: string;      // a lost item keeps its name at the map centre
+  moving_to?: string | null;  // its chosen replacement
   impact?: Impact;
   routing?: Routing;
   candidates?: Candidate[];
