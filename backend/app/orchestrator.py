@@ -37,7 +37,7 @@ from .agents import (AgentOutputError, AgentResult, CandidatesReply, Coordinator
 from .exports import NEWCOMERS_GROUP, build_attendee_csv, build_ics
 from .headcount import on_site
 from .impact_engine import propagate, route
-from .models import EventModel, NodeType, Scenario
+from .models import Disruption, EventModel, NodeType, Scenario
 from .recipients import address, member_groups, one_message_per_person, resolve
 from .rooms import settle_rooms
 from .whatif import attendee_group
@@ -706,6 +706,8 @@ async def handle_disruption(event: Event, text: str, runner: Runner, area: Optio
         return entry
 
     d = res.data.disruption
+    if not d.detail.strip():   # the one-line summary is the problem's short title: write it in code if missing
+        d = d.model_copy(update={"detail": plain_summary(model, d)})
     dis = d.model_dump(mode="json")
     impact = propagate(model, d)                                   # code
     add_members(model, impact)                                     # code: Speakers -> Speaker 1, 2, 3
@@ -1123,6 +1125,24 @@ def set_budget(event: Event, remaining_eur: float) -> None:
             h["scored"] = [x.to_dict() for x in score([Scenario.model_validate(s) for s in h["scenarios"]],
                                                        remaining_eur, slack)]
     event.save()
+
+
+def plain_summary(model: EventModel, d: Disruption) -> str:
+    """A one-line summary from the event model, when the Impact Analyst left it empty."""
+    node = next((n for n in model.nodes if n.id == d.node), None)
+    label = node.label if node else d.node
+    p = d.params or {}
+    kind = d.kind.value
+    if kind == "lost":
+        return f"{label} is no longer available."
+    if kind == "supplier_failed":
+        return f"{label}: the supplier can't deliver."
+    if kind == "delayed":
+        mins = p.get("delay_minutes")
+        return f"{label} is {mins} minutes late." if mins else f"{label} is late."
+    if kind == "resized":
+        return f"{label}: now {p['new_size']}." if p.get("new_size") else f"{label}: the number changed."
+    return f"{label} changed."
 
 
 def add_members(model: EventModel, impact) -> None:

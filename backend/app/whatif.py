@@ -125,7 +125,8 @@ def simulate(event_data: dict[str, Any], budget_eur: Optional[float] = None, att
         now = [x.to_dict() for x in score(scen, budget_now, slack)]
         later = [x.to_dict() for x in score(revised, b_what.attrs["remaining_eur"] if b_what else None, slack)]
         by_id = {x["id"]: x for x in later}
-        out["options"] = {"problem": entry["id"], "text": entry["text"], "rows": [
+        out["options"] = {"problem": entry["id"], "text": entry["text"],
+                          "detail": (entry.get("disruption") or {}).get("detail", ""), "rows": [
             {"id": x["id"], "title": x["title"],
              "now": {"rank": x["rank"], "verdict": verdict(x), "violations": x["violations"]},
              "whatif": {"rank": by_id[x["id"]]["rank"], "verdict": verdict(by_id[x["id"]]),

@@ -412,3 +412,15 @@ def test_a_failing_agent_is_announced_in_plain_words(setup):
     from app.agents import AgentOutputError
     assert "couldn't be read" in failure_reason(AgentOutputError("bad json"))
     assert failure_reason(ValueError("x")) == "Something went wrong while it worked. Try again."
+
+
+def test_an_empty_summary_is_written_in_code():
+    """The problem's short title comes from the summary; the Impact Analyst sometimes leaves it empty."""
+    from app.models import Disruption
+    from app.orchestrator import plain_summary
+    model = json.loads(GENERATED_MODEL.read_text(encoding="utf-8"))
+    from app.models import EventModel
+    m = EventModel.model_validate(model)
+    hall = m.node("venue_main_hall").label
+    assert plain_summary(m, Disruption(node="venue_main_hall", kind="lost")) == f"{hall} is no longer available."
+    assert plain_summary(m, Disruption(node="workshop_s2", kind="delayed", params={"delay_minutes": 120})).endswith("120 minutes late.")

@@ -38,6 +38,7 @@ def test_preview_changes_nothing(client):
 def test_more_attendees_than_any_hall(client):
     c, _ = client
     out = c.post("/api/events/demo/whatif", json={"attendees": 600}).json()
+    assert out["options"]["detail"]          # the analyst's one-line summary, for a short title
     rows = out["options"]["rows"]
     assert {r["now"]["verdict"] for r in rows} <= {"best", "ok"}
     assert {r["whatif"]["verdict"] for r in rows} == {"too small"}         # 277, 500, 516 seats < 600

@@ -112,7 +112,7 @@ export interface WhatIf {
   budget: { now: number | null; whatif: number | null };
   attendees: { now: number | null; whatif: number | null; ripple: WhatIfRipple | null };
   delay: { node: string; label: string; minutes: number; ripple: WhatIfRipple } | null;
-  options: { problem: string; text: string; rows: { id: string; title: string; now: WhatIfRow; whatif: WhatIfRow }[] } | null;
+  options: { problem: string; text: string; detail?: string; rows: { id: string; title: string; now: WhatIfRow; whatif: WhatIfRow }[] } | null;
   apply: { kind: "budget" | "problem"; text: string; value?: number; replayable: boolean }[];
 }
 

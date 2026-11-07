@@ -7,7 +7,7 @@ import { api } from "./api";
 import type { WhatIf, WhatIfRipple } from "./api";
 import { CardHead, Pill } from "./components/ui";
 import { useRipple } from "./store";
-import { AGENTS } from "./view";
+import { AGENTS, problemTitle } from "./view";
 
 const title = (a: string) => AGENTS.find((x) => x.name === a)?.title ?? a;
 const VERDICT: Record<string, string> = { best: "v-best", ok: "v-ok", "over budget": "v-bad", "too small": "v-bad", "not possible": "v-bad" };
@@ -139,7 +139,7 @@ export function WhatIfPage() {
         <>
           {res.options && (
             <section className={`card ${loading ? "dim" : ""}`}>
-              <CardHead title="Your options" sub={`For "${res.options.text}". Ranked by code, side by side.`} />
+              <CardHead title="Your options" sub={`For "${problemTitle(res.options.text, res.options.detail).replace(/[.!?]$/, "")}". Ranked by code, side by side.`} />
               <table className="wi-table">
                 <thead><tr><th>Option</th><th>Today</th><th aria-hidden="true" /><th>What-if</th></tr></thead>
                 <tbody>
