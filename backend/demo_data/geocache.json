@@ -32,5 +32,37 @@
     48.8698401,
     2.3639413
   ],
-  "270 rue saint jacques or 9 rue pierre nicole, paris": null
+  "270 rue saint jacques or 9 rue pierre nicole, paris": null,
+  "18 rue yves toudic, paris 10": [
+    48.8698401,
+    2.3639413
+  ],
+  "32 rue de trévise, paris 9": [
+    48.8749938,
+    2.3455117
+  ],
+  "69 bis rue boissière, 75116 paris, france": [
+    48.8683121,
+    2.2874796
+  ],
+  "3 rue montholon, 75009 paris, france": [
+    48.8765806,
+    2.3481446
+  ],
+  "5 parvis alan turing, 75013 paris, france": [
+    48.8340771,
+    2.3711573
+  ],
+  "2 rue vivienne, 75002 paris": [
+    48.8665302,
+    2.3391089
+  ],
+  "21 rue albert bayet, 75013 paris": [
+    48.8310921,
+    2.3580756
+  ],
+  "3 quai de grenelle 75015 paris": [
+    48.8541066,
+    2.2883942
+  ]
 }
