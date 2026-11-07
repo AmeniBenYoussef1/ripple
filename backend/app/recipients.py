@@ -63,11 +63,27 @@ def resolve(model: EventModel, group_id: str, data_dir: Path) -> dict[str, Any]:
         exact = [r for r in rows if full_name(r).lower() in (label, label.split("(")[0].strip())]
         if exact:
             return {"recipients": [_person(r) for r in exact], "source": node.source}
+        # one person the analysis linked by email: use it only if that email is really in the file
+        email = str(node.attrs.get("email", "")).lower()
+        if email:
+            found = [r for r in rows if r.get("email", "").lower() == email]
+            if found:
+                return {"recipients": [_person(r) for r in found], "source": node.source}
         # a role group: any word of the label names a role ("Speakers & mentors" -> speaker, mentor)
         words = {w.rstrip("s") for w in re.findall(r"[a-z]+", label) if len(w) > 3}
-        return {"recipients": [_person(r) for r in rows
-                               if words & {w.rstrip("s") for w in re.findall(r"[a-z]+", r.get("role", "").lower())}],
-                "source": node.source}
+        people = [_person(r) for r in rows
+                  if words & {w.rstrip("s") for w in re.findall(r"[a-z]+", r.get("role", "").lower())}]
+        # "Speakers" (3) with a mentor and a jury lead among them: add the people of its
+        # sub-groups (grp_speaker_s1, grp_speaker_s2...), resolved the same way
+        size = node.attrs.get("size")
+        if isinstance(size, int) and len(people) < size:
+            prefix = node.id.rstrip("s") + "_"
+            for child in model.nodes:
+                if child.id.startswith(prefix) and child.source == node.source:
+                    for p in resolve(model, child.id, data_dir)["recipients"]:
+                        if p["email"] not in {x["email"] for x in people}:
+                            people.append(p)
+        return {"recipients": people, "source": node.source}
 
     if path.suffix in (".txt", ".pdf") and path.exists():
         for line in text_lines(path):

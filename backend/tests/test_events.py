@@ -107,3 +107,30 @@ def test_recipients_from_the_hercode_files():
     assert {p["email"] for p in get("grp_mentors")} == {"nadia.karim@example.com", "lina.haddad@example.com"}
     assert len(get("grp_volunteers")) == 10                                  # lead + 9 volunteers
     assert [p["email"] for p in get("grp_caterer")] == ["orders@saveurs-co.example.com"]   # read from the PDF
+
+
+@pytest.mark.skipif(not HERCODE.exists(), reason="hercode_event folder not present")
+def test_rehearsal_fixes_speakers_group_date_and_venue_name(tmp_path):
+    from app.orchestrator import apply_scenario, event_date
+    from app.models import Scenario
+    model = EventModel(event_id="hercode", nodes=[
+        Node(id="venue_atelier", type="resource", label="Atelier Lumiere", attrs={"capacity": 170}, source="schedule.json"),
+        Node(id="grp_speakers", type="group", label="Speakers", attrs={"size": 3}, source="people.csv"),
+        Node(id="grp_speaker_s1", type="group", label="Nadia Karim (S1, opening keynote)", attrs={"size": 1}, source="people.csv"),
+        Node(id="grp_speaker_s2", type="group", label="Lina Haddad (S2, workshop)",
+             attrs={"size": 1, "email": "lina.haddad@example.com"}, source="people.csv"),
+        Node(id="grp_speaker_s3", type="group", label="S3", attrs={"size": 1, "email": "sofia.martins@example.com"},
+             source="people.csv"),
+        Node(id="grp_fake", type="group", label="Someone", attrs={"size": 1, "email": "made.up@example.com"}, source="people.csv"),
+    ])
+    speakers = {p["email"] for p in resolve(model, "grp_speakers", HERCODE)["recipients"]}
+    assert speakers == {"nadia.karim@example.com", "lina.haddad@example.com", "sofia.martins@example.com"}
+    assert resolve(model, "grp_speaker_s3", HERCODE)["recipients"][0]["name"] == "Sofia Martins"
+    assert resolve(model, "grp_fake", HERCODE)["recipients"] == []          # an email not in the file is ignored
+    # the date comes from schedule.json when no node carries it -> the calendar file can be built
+    assert event_date(model) is None and event_date(model, HERCODE) == "2026-11-28"
+    # after the move, the venue node carries the new name (the old one is kept)
+    model.node("venue_atelier").attrs["replaced_by"] = "Morning Rue Dieu"
+    apply_scenario(model, "venue_atelier", "lost", Scenario(id="B", title="Move", capacity=220))
+    v = model.node("venue_atelier")
+    assert (v.label, v.attrs["capacity"], v.attrs["original_label"]) == ("Morning Rue Dieu", 220, "Atelier Lumiere")

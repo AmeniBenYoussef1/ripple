@@ -322,10 +322,19 @@ def needed_capacity(model: EventModel, resource_id: str, new_size: Optional[int]
     return max(vals) if vals else None
 
 
-def event_date(model: EventModel) -> Optional[str]:
+def event_date(model: EventModel, data_dir: Optional[Path] = None) -> Optional[str]:
+    """The event's date (YYYY-MM-DD): a node that carries it, else the "date" of the event's schedule.json."""
     for n in model.nodes:
         if n.attrs.get("date"):
             return str(n.attrs["date"])
+    schedule = (data_dir / "schedule.json") if data_dir else None
+    if schedule and schedule.exists():
+        try:
+            date = json.loads(schedule.read_text(encoding="utf-8")).get("date")
+        except (ValueError, OSError):
+            return None
+        if isinstance(date, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
+            return date
     return None
 
 
@@ -402,8 +411,13 @@ def apply_scenario(model: EventModel, origin: str, kind: str, s: Scenario) -> Ev
             n.attrs.update(ch["set"])
         if ch.get("replace_with"):
             n.attrs["replaced_by"] = ch["replace_with"]
-    if kind == "lost" and origin in nodes and s.capacity is not None:
-        nodes[origin].attrs["capacity"] = s.capacity   # the replacement venue's capacity
+    if kind == "lost" and origin in nodes:
+        node = nodes[origin]
+        if s.capacity is not None:
+            node.attrs["capacity"] = s.capacity          # the replacement venue's capacity
+        if node.attrs.get("replaced_by"):                # from now on it is the new venue
+            node.attrs.setdefault("original_label", node.label)
+            node.label = str(node.attrs["replaced_by"])
     return model
 
 
@@ -428,10 +442,10 @@ def impact_message(model: EventModel, text: str) -> str:
 
 
 def finder_message(model: EventModel, finder_nodes: list[str], effects: dict, detail: str,
-                   new_size: Optional[int], area: str) -> str:
+                   new_size: Optional[int], area: str, data_dir: Optional[Path] = None) -> str:
     nodes = {n.id: n for n in model.nodes}
     needs = [{"resource": nodes[r].model_dump(mode="json"), "problem": effects[r],
-              "requirements": {"min_capacity": needed_capacity(model, r, new_size), "date": event_date(model),
+              "requirements": {"min_capacity": needed_capacity(model, r, new_size), "date": event_date(model, data_dir),
                                "area": area, "max_extra_cost_eur": remaining_budget(model)}}
              for r in finder_nodes]
     return (
@@ -675,7 +689,7 @@ async def handle_disruption(event: Event, text: str, runner: Runner, area: Optio
     if "resource_finder" in decision.run:
         out = await run_agent("resource_finder", finder_message(
             model, [n for n in decision.slices["resource_finder"] if impact.effects.get(n) in ("lost", "insufficient")],
-            impact.effects, d.detail, d.params.get("new_size"), area))
+            impact.effects, d.detail, d.params.get("new_size"), area, event.data_dir))
         candidates = out.model_dump(mode="json")["candidates"] if out else []
     elif "resource_finder" in decision.cached:
         candidates = cached_output("resource_finder")["candidates"]
@@ -877,7 +891,7 @@ def build_files(event: Event, disruption_id: str, model: EventModel,
     event.files_dir.mkdir(parents=True, exist_ok=True)
     prefix = disruption_id.split("-")[0]          # "d1"
     files = []
-    date = event_date(model)
+    date = event_date(model, event.data_dir)
     if revised_schedule and date:
         name = f"{prefix}-revised_schedule.ics"
         (event.files_dir / name).write_text(build_ics(revised_schedule, model, date), encoding="utf-8", newline="")

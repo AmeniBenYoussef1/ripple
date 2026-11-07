@@ -82,7 +82,7 @@ async def venue_pins(entry: dict[str, Any], model_nodes: list[dict[str, Any]], g
     if origin is not None:
         address = origin.get("attrs", {}).get("address")
         point = await geo.locate(address)
-        lost = {"name": origin["label"], "address": address,
+        lost = {"name": origin.get("attrs", {}).get("original_label") or origin["label"], "address": address,
                 "lat": point[0] if point else None, "lon": point[1] if point else None,
                 "note": None if point else "fictional demo address: not shown on the map"
                 if address and "[" in address else "no address known"}
