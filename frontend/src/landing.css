@@ -97,3 +97,19 @@ html { scroll-behavior: smooth; }
   .l-cta .btn { flex: 1 1 100%; }
   .hero-map { border-radius: 20px; padding: 4px; }
 }
+
+/* ---- Start screen ---- */
+.start-main { max-width: 860px; margin: 0 auto; padding: 40px 24px 64px; display: flex; flex-direction: column; gap: 18px; }
+.start-title { font-size: clamp(32px, 4vw, 44px); letter-spacing: -1px; font-weight: 800; }
+.start .card { gap: 14px; }
+.dropzone.dim { opacity: 0.5; }
+.best summary { cursor: pointer; font-weight: 700; color: var(--ok-text); }
+.best ul { margin: 8px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; color: var(--muted); }
+.best strong { color: var(--text); }
+.note { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); margin: 0; }
+.note svg { flex: none; color: var(--icon); }
+.quick-btn.on { border-color: var(--coral); background: var(--warn-soft); }
+.start-alert { margin: 0; }
+.start-go { display: flex; align-items: center; justify-content: flex-end; gap: 16px; flex-wrap: wrap; }
+.tries { margin-right: auto; }
+@media (max-width: 640px) { .start-main { padding: 24px 16px 48px; } .start-go .btn { flex: 1 1 100%; } }

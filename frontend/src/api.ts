@@ -14,10 +14,21 @@ export function setEvent(id: string) {
 /** message = what the organizer sees; detail = the technical text (shown in Behind the scenes). */
 export class ApiError extends Error {
   detail: string;
-  constructor(message: string, detail = "") {
+  /** "limit", "live-off", "public", "not-event", "vague"... when the server said why */
+  kind: string;
+  constructor(message: string, detail = "", kind = "") {
     super(message);
     this.detail = detail || message;
+    this.kind = kind;
   }
+}
+
+/** The server prefixes plain-language refusals with their kind: "limit|You've used today's…". */
+const KINDS = ["limit", "live-off", "public", "not-event", "vague"];
+function kindOf(detail: string): [string, string] {
+  const i = detail.indexOf("|");
+  const k = i > 0 ? detail.slice(0, i) : "";
+  return KINDS.includes(k) ? [k, detail.slice(i + 1)] : ["", detail];
 }
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
@@ -25,6 +36,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     res = await fetch(`${API}${path}`, {
       ...init,
+      credentials: "include",   // the visitor cookie (public Start flow)
       headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
     });
   } catch {
@@ -39,7 +51,8 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       /* not JSON */
     }
-    throw new ApiError(friendlyError(res.status, detail), `${res.status} ${path}: ${detail}`);
+    const [kind, text] = kindOf(detail);
+    throw new ApiError(kind ? text : friendlyError(res.status, detail), `${res.status} ${path}: ${detail}`, kind);
   }
   return res.json() as Promise<T>;
 }
@@ -57,7 +70,9 @@ export function friendlyError(status: number, detail: string): string {
   if (detail.includes("unknown event")) return "This event could not be found. Reload the page.";
   if (detail.includes("unknown message ids")) return "Some of these messages no longer exist. Reload the page.";
   // checks written in plain words on the server: show them as they are
-  if (/at most \d+ files|only CSV|10 MB|is empty|add your event files|write an answer|cannot be negative|must be positive|pick a session|a delay is between|has no budget|only drafts can be edited|needs a subject|say which limit|was rejected|no options to re-plan/.test(detail)) {
+  const [kind, text] = kindOf(detail);
+  if (kind) return text;
+  if (/at most \d+ files|only CSV|\d+ MB|is empty|write what went wrong|add your event files|write an answer|cannot be negative|must be positive|pick a session|a delay is between|has no budget|only drafts can be edited|needs a subject|say which limit|was rejected|no options to re-plan/.test(detail)) {
     return detail.charAt(0).toUpperCase() + detail.slice(1) + ".";
   }
   return "Something went wrong. The details are in Behind the scenes.";
@@ -111,13 +126,13 @@ export const api = {
     files.forEach((f) => form.append("files", f, f.name));
     let res: Response;
     try {
-      res = await fetch(`${API}${ev()}/analyze`, { method: "POST", body: form });
+      res = await fetch(`${API}${ev()}/analyze`, { method: "POST", body: form, credentials: "include" });
     } catch {
       throw new ApiError(friendlyError(0, ""), `analyze: server unreachable at ${API}`);
     }
     const body = await res.json().catch(() => ({}));
     const detail = typeof body.detail === "string" ? body.detail : `${res.status} ${res.statusText}`;
-    if (!res.ok) throw new ApiError(friendlyError(res.status, detail), `${res.status} analyze: ${detail}`);
+    if (!res.ok) throw new ApiError(friendlyError(res.status, detail), `${res.status} analyze: ${detail}`, kindOf(detail)[0]);
     return body;
   },
   answer: (text: string, disruption?: string) =>
@@ -139,9 +154,27 @@ export const api = {
   listEvents: () => call<{ id: string; title: string; problems: number; setup: string; replay: boolean }[]>("/api/events"),
   createEvent: (id: string, title: string) =>
     call<EventState>(`/api/events/${encodeURIComponent(id)}/create`, { method: "POST", body: JSON.stringify({ title }) }),
+  visitorStatus: () => call<VisitorStatus>("/api/visitor/status"),
+  visitorEvent: (title: string) => call<EventState>("/api/visitor/event", { method: "POST", body: JSON.stringify({ title }) }),
+  visitorSample: () => call<EventState>("/api/visitor/sample", { method: "POST" }),
+  samplePackUrl: () => `${API}/api/sample-pack.zip`,
   confirmSetup: () => call<EventState>(`${ev()}/setup/confirm`, { method: "POST" }),
   demoFiles: () => call<{ name: string; bytes: number }[]>("/api/demo-files"),
   demoFileUrl: (name: string) => `${API}/api/demo-files/${encodeURIComponent(name)}`,
   fileUrl: (name: string) => `${API}${ev()}/files/${encodeURIComponent(name)}`,
   streamUrl: () => `${API}${ev()}/stream`,
 };
+
+export interface VisitorStatus {
+  public: boolean;
+  live: boolean;            // Live agents available on this server
+  analyses_left: number;
+  problems_left: number;
+  budget_left: boolean;
+  max_file_mb: number;
+  ttl_hours: number;
+  events: string[];
+}
+
+/** A problem to report as soon as the workspace opens (set by the Start page). */
+export const PENDING = "ripple.pendingProblem";

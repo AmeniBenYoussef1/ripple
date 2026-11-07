@@ -1,0 +1,92 @@
+{
+  "event": "HerCode Hackathon Paris 2026 (fictional demo event)",
+  "date": "2026-11-28",
+  "city": "Paris, France",
+  "venue": {
+    "name": "Atelier Lumiere (fictional)",
+    "address": "[FICTIONAL ADDRESS], Paris 11e",
+    "capacity": 170,
+    "rooms": [
+      "Main hall",
+      "Room B"
+    ],
+    "rental_eur": 2800,
+    "contact": "events@atelier-lumiere.example.com"
+  },
+  "commitments": [
+    {
+      "id": "volunteer_meetup",
+      "label": "Volunteer meet-up",
+      "time": "08:00",
+      "place": "Main hall entrance"
+    },
+    {
+      "id": "av_setup",
+      "label": "AV and Wi-Fi setup",
+      "time": "08:15",
+      "supplier": "venue technician"
+    },
+    {
+      "id": "catering_delivery",
+      "label": "Lunch delivery",
+      "time": "12:00",
+      "supplier": "Saveurs & Co",
+      "see": "catering_contract.pdf"
+    }
+  ],
+  "program": [
+    {
+      "id": "opening",
+      "label": "Opening keynote",
+      "start": "09:00",
+      "end": "09:30",
+      "room": "Main hall",
+      "speaker": "S1"
+    },
+    {
+      "id": "hack_1",
+      "label": "Hacking session 1",
+      "start": "09:30",
+      "end": "12:30",
+      "room": "Main hall"
+    },
+    {
+      "id": "workshop_lina",
+      "label": "Workshop: Building LLM agents",
+      "start": "11:00",
+      "end": "12:00",
+      "room": "Room B",
+      "speaker": "S2",
+      "registered": "participants with workshop = yes (35)"
+    },
+    {
+      "id": "lunch",
+      "label": "Lunch",
+      "start": "12:30",
+      "end": "13:30",
+      "room": "Main hall"
+    },
+    {
+      "id": "hack_2",
+      "label": "Hacking session 2",
+      "start": "13:30",
+      "end": "17:00",
+      "room": "Main hall"
+    },
+    {
+      "id": "demos",
+      "label": "Demos and judging",
+      "start": "17:00",
+      "end": "18:00",
+      "room": "Main hall",
+      "speaker": "S3"
+    },
+    {
+      "id": "awards",
+      "label": "Awards",
+      "start": "18:00",
+      "end": "18:30",
+      "room": "Main hall"
+    }
+  ]
+}

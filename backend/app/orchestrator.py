@@ -558,7 +558,7 @@ Conventions:
 - Put the source file name in "source" for every fact taken from a file."""
 
 
-def check_setup_files(files: list[tuple[str, bytes]]) -> None:
+def check_setup_files(files: list[tuple[str, bytes]], max_bytes: int = SETUP_MAX_BYTES) -> None:
     if not files:
         raise OrchestratorError("add your event files first")
     if len(files) > SETUP_MAX_FILES:
@@ -566,8 +566,8 @@ def check_setup_files(files: list[tuple[str, bytes]]) -> None:
     for name, data in files:
         if Path(name).suffix.lower() not in SETUP_FILE_TYPES:
             raise OrchestratorError(f"{name}: only CSV, PDF, TXT or JSON files")
-        if len(data) > SETUP_MAX_BYTES:
-            raise OrchestratorError(f"{name} is larger than 10 MB")
+        if len(data) > max_bytes:
+            raise OrchestratorError(f"{name} is larger than {max_bytes / 1024 / 1024:g} MB")
         if not data:
             raise OrchestratorError(f"{name} is empty")
 
@@ -582,12 +582,13 @@ def model_checker(parsed: EventModelReply) -> None:
         raise ValueError(f"these edges use node ids that do not exist: {bad[:10]}")
 
 
-async def analyze_event(event: Event, files: list[tuple[str, bytes]], runner: Runner) -> dict[str, Any]:
+async def analyze_event(event: Event, files: list[tuple[str, bytes]], runner: Runner,
+                        max_bytes: int = SETUP_MAX_BYTES) -> dict[str, Any]:
     """Files -> Impact Analyst -> event model. Live uploads to Cominty; Replay uses the recorded setup.
 
     A new model starts the event over: history, cache and costs are cleared.
     """
-    check_setup_files(files)
+    check_setup_files(files, max_bytes)
     await runner.stage("setup_started", {"files": [n for n, _ in files], "replay": runner.demo})
     file_ids: list[str] = []
     if not runner.demo:

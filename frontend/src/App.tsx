@@ -7,10 +7,19 @@ import { SetupPage } from "./SetupPage";
 import { WhatIfPage } from "./WhatIfPage";
 import { HistoryPage } from "./HistoryPage";
 import { Landing } from "./Landing";
+import { StartPage } from "./StartPage";
+import { PENDING } from "./api";
 import { RippleProvider, useRipple } from "./store";
 
 function Layout() {
-  const { state, error, clearError, notice, clearNotice } = useRipple();
+  const { state, error, clearError, notice, clearNotice, report } = useRipple();
+  // a problem typed on the Start page is handled as soon as the workspace opens
+  useEffect(() => {
+    const text = sessionStorage.getItem(PENDING);
+    if (!state || !text) return;
+    sessionStorage.removeItem(PENDING);
+    void report(text);
+  }, [state, report]);
   // after a success, bring the result into view (e.g. the Outbox after "Approve plan")
   useEffect(() => {
     if (!notice?.target) return;
@@ -73,6 +82,7 @@ export default function App() {
       <Routes>
         {/* the public landing page */}
         <Route path="/" element={<Landing />} />
+        <Route path="/start" element={<StartPage />} />
         {/* the app; it only connects to the server here */}
         <Route path="/app/*" element={<RippleProvider><Layout /></RippleProvider>} />
         {/* older links, e.g. /event, keep working */}

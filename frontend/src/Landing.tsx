@@ -1,4 +1,4 @@
-// Ripple's public landing page. Every button works: "Try the demo" opens the app.
+// Ripple's public landing page. Every button works: "Get started" opens the Start screen.
 import {
   BellOff, CheckCircle2, ChevronDown, ExternalLink, FileUp, FlaskConical, Link2, Mail, MessageSquareText, PlayCircle,
   Radar, Scale, ShieldCheck, Waves,
@@ -52,7 +52,7 @@ export function Landing() {
         </nav>
         <div className="l-nav-end">
           <ThemeToggle />
-          <Link to="/app" className="btn btn-primary">Try the demo</Link>
+          <Link to="/start" className="btn btn-primary">Get started</Link>
         </div>
       </header>
 
@@ -63,14 +63,14 @@ export function Landing() {
             <h1>Drop one problem.<br /><span className="l-accent">Watch the ripple.</span></h1>
             <p className="l-lead">Ripple's AI agents find everything a disruption touches, propose fixes and prepare every message. Only what changed reacts.</p>
             <div className="l-cta">
-              <Link to="/app" className="btn btn-primary btn-lg">Try the demo</Link>
+              <Link to="/start" className="btn btn-primary btn-lg">Get started</Link>
               {VIDEO_URL ? (
                 <a className="btn btn-outline btn-lg" href={VIDEO_URL} target="_blank" rel="noreferrer"><PlayCircle size={18} />Watch the video<ExternalLink size={14} /></a>
               ) : (
                 <button type="button" className="btn btn-outline btn-lg" disabled title="The video link isn't set yet"><PlayCircle size={18} />Video coming soon</button>
               )}
             </div>
-            <p className="l-note">No sign-in. The demo replays real agent runs on a fictional event.</p>
+            <p className="l-note">No sign-in. Use your own (fictional) event files, or a sample event that replays real agent runs.</p>
           </div>
           <HeroMap />
         </section>
@@ -115,7 +115,7 @@ export function Landing() {
         <section className="l-section l-final">
           <h2>See Ripple handle a crisis</h2>
           <p>Three problems, one fictional hackathon, real agent runs.</p>
-          <Link to="/app" className="btn btn-primary btn-lg">Try the demo</Link>
+          <Link to="/start" className="btn btn-primary btn-lg">Get started</Link>
         </section>
       </main>
 

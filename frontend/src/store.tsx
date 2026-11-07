@@ -170,7 +170,7 @@ export function RippleProvider({ children }: { children: ReactNode }) {
 
   // One SSE connection for the whole app; messages count only while a request runs.
   useEffect(() => {
-    const es = new EventSource(api.streamUrl());
+    const es = new EventSource(api.streamUrl(), { withCredentials: true });
     const on = (type: string) => (msg: MessageEvent) => {
       if (!busyRef.current) return;
       const d = JSON.parse(msg.data);

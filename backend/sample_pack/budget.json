@@ -1,0 +1,14 @@
+{
+  "currency": "EUR",
+  "total": 15000,
+  "spent": {
+    "venue rental": 2800,
+    "catering": 2100,
+    "AV equipment": 900,
+    "prizes": 1200,
+    "t-shirts": 600,
+    "misc": 400
+  },
+  "remaining": 7000,
+  "note": "Fictional demo budget"
+}

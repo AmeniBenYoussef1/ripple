@@ -58,7 +58,7 @@ function understood(m: EventModel) {
   return { venue, timeline, top, children: (g: ModelNode) => groups.filter((x) => parentOf(x) === g), budget, timeOf };
 }
 
-function Understood({ model }: { model: EventModel }) {
+export function Understood({ model }: { model: EventModel }) {
   const u = useMemo(() => understood(model), [model]);
   const eur = (v: unknown) => (typeof v === "number" ? `€${v.toLocaleString("en-GB")}` : "—");
   return (
@@ -158,7 +158,7 @@ export function SetupPage() {
   useEffect(() => {
     if (!running) return;
     setSteps([]);
-    const es = new EventSource(api.streamUrl());
+    const es = new EventSource(api.streamUrl(), { withCredentials: true });
     const add = (text: string) => setSteps((s) => (s[0] === text ? s : [text, ...s].slice(0, 30)));
     es.addEventListener("setup_uploaded", (m) => add(`Sent ${JSON.parse((m as MessageEvent).data).file} to Cominty`));
     es.addEventListener("agent", (m) => {

@@ -1,0 +1,9 @@
+From: events@atelier-lumiere.example.com
+Subject: URGENT - Saturday cancellation
+
+Dear organizers,
+
+We are very sorry: a water leak was discovered tonight in our main hall and Room B. The building will be closed on Saturday 28 November for repairs, so we cannot host the HerCode Hackathon. Your rental fee will be refunded in full within 10 days.
+
+Best regards,
+Atelier Lumiere (fictional)

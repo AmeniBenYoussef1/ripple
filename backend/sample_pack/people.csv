@@ -1,0 +1,14 @@
+id,first_name,last_name,role,email,responsibility,notes
+S1,Nadia,Karim,speaker,nadia.karim@example.com,Opening keynote 09:00,In Paris
+S2,Lina,Haddad,mentor,lina.haddad@example.com,"Workshop 'Building LLM agents' 11:00-12:00, room B","Flying in from Tunis on Saturday morning, landing at Orly 08:40"
+S3,Sofia,Martins,jury lead,sofia.martins@example.com,Demos and judging 17:00,In Paris
+V01,Maya,Leroy,volunteer lead,maya.leroy@example.com,"Coordinates volunteers, meet-up 08:00",
+V02,Ines,Barbier,volunteer,ines.barbier@example.com,Mentor runner,
+V03,Rayan,Guerin,volunteer,rayan.guerin@example.com,Registration desk,
+V04,Eva,Morel,volunteer,eva.morel@example.com,AV and Wi-Fi help,
+V05,Bilel,Noury,volunteer,bilel.noury@example.com,Registration desk,
+V06,Romane,Perrin,volunteer,romane.perrin@example.com,Mentor runner,
+V07,Walid,Ferchichi,volunteer,walid.ferchichi@example.com,Mentor runner,
+V08,Agathe,Colin,volunteer,agathe.colin@example.com,Lunch distribution,
+V09,Mehdi,Aubert,volunteer,mehdi.aubert@example.com,AV and Wi-Fi help,
+V10,Pauline,Renaud,volunteer,pauline.renaud@example.com,Mentor runner,
