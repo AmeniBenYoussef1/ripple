@@ -86,9 +86,9 @@ export function WhatIfPage() {
     try {
       if (a.kind === "budget") {
         await api.setBudget(a.value!);
-        nav("/event");
+        nav("/app/event");
       } else {
-        nav("/event");
+        nav("/app/event");
         await report(a.text);
       }
     } catch (e) {

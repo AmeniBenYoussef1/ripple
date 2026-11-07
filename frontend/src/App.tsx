@@ -6,6 +6,7 @@ import { HomePage, OutboxPage, SettingsPage, WorkspacePage } from "./pages";
 import { SetupPage } from "./SetupPage";
 import { WhatIfPage } from "./WhatIfPage";
 import { HistoryPage } from "./HistoryPage";
+import { Landing } from "./Landing";
 import { RippleProvider, useRipple } from "./store";
 
 function Layout() {
@@ -23,7 +24,7 @@ function Layout() {
   useEffect(() => {
     if (!state || checked.current) return;
     checked.current = true;
-    if (!state.setup?.confirmed && state.history.length === 0 && loc.pathname === "/") nav("/setup");
+    if (!state.setup?.confirmed && state.history.length === 0 && loc.pathname === "/app") nav("/app/setup");
   }, [state, loc.pathname, nav]);
   return (
     <div className="shell">
@@ -51,14 +52,14 @@ function Layout() {
           ) : <div className="loading"><span className="spinner" aria-hidden="true" />Loading Ripple…</div>
         ) : (
           <Routes>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/setup" element={<SetupPage />} />
-            <Route path="/event" element={<WorkspacePage />} />
-            <Route path="/whatif" element={<WhatIfPage />} />
-            <Route path="/history" element={<HistoryPage />} />
-            <Route path="/outbox" element={<OutboxPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route index element={<HomePage />} />
+            <Route path="setup" element={<SetupPage />} />
+            <Route path="event" element={<WorkspacePage />} />
+            <Route path="whatif" element={<WhatIfPage />} />
+            <Route path="history" element={<HistoryPage />} />
+            <Route path="outbox" element={<OutboxPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+            <Route path="*" element={<Navigate to="/app" replace />} />
           </Routes>
         )}
       </main>
@@ -69,9 +70,17 @@ function Layout() {
 export default function App() {
   return (
     <BrowserRouter>
-      <RippleProvider>
-        <Layout />
-      </RippleProvider>
+      <Routes>
+        {/* the public landing page */}
+        <Route path="/" element={<Landing />} />
+        {/* the app; it only connects to the server here */}
+        <Route path="/app/*" element={<RippleProvider><Layout /></RippleProvider>} />
+        {/* older links, e.g. /event, keep working */}
+        {["setup", "event", "whatif", "history", "outbox", "settings"].map((p) => (
+          <Route key={p} path={`/${p}`} element={<Navigate to={`/app/${p}`} replace />} />
+        ))}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
     </BrowserRouter>
   );
 }

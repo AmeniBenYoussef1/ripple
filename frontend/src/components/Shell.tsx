@@ -25,10 +25,10 @@ function EventSwitcher() {
       <select className="text-input" value={eventId} disabled={busy} aria-label="Event"
         onChange={async (e) => {
           const v = e.target.value;
-          if (v === "__new") { nav("/setup?new=1"); return; }
+          if (v === "__new") { nav("/app/setup?new=1"); return; }
           await switchEvent(v);
           const ev = events.find((x) => x.id === v);
-          nav(ev && ev.setup !== "analyzed" ? "/setup" : "/event");
+          nav(ev && ev.setup !== "analyzed" ? "/app/setup" : "/app/event");
         }}>
         {list.map((e) => <option key={e.id} value={e.id}>{e.title}{e.replay ? " (Replay)" : ""}</option>)}
         <option value="__new">+ New event…</option>
@@ -41,13 +41,13 @@ export function Sidebar() {
   const { state } = useRipple();
   const drafts = state?.history.reduce((n, h) => n + (h.outbox ?? []).filter((m) => m.status === "draft").length, 0) ?? 0;
   const links = [
-    { to: "/", label: "Home", icon: <Home size={18} />, end: true },
-    { to: "/setup", label: "Event setup", icon: <FileUp size={18} />, badge: state?.setup?.confirmed ? undefined : ("!" as const) },
-    { to: "/event", label: "Event workspace", icon: <LayoutDashboard size={18} /> },
-    { to: "/whatif", label: "What-if", icon: <FlaskConical size={18} /> },
-    { to: "/outbox", label: "Outbox", icon: <Inbox size={18} />, badge: drafts || undefined },
-    { to: "/history", label: "History", icon: <History size={18} /> },
-    { to: "/settings", label: "Settings", icon: <Settings size={18} /> },
+    { to: "/app", label: "Home", icon: <Home size={18} />, end: true },
+    { to: "/app/setup", label: "Event setup", icon: <FileUp size={18} />, badge: state?.setup?.confirmed ? undefined : ("!" as const) },
+    { to: "/app/event", label: "Event workspace", icon: <LayoutDashboard size={18} /> },
+    { to: "/app/whatif", label: "What-if", icon: <FlaskConical size={18} /> },
+    { to: "/app/outbox", label: "Outbox", icon: <Inbox size={18} />, badge: drafts || undefined },
+    { to: "/app/history", label: "History", icon: <History size={18} /> },
+    { to: "/app/settings", label: "Settings", icon: <Settings size={18} /> },
   ];
   return (
     <div className="side-col"><nav className="sidebar" aria-label="Main">
@@ -114,7 +114,7 @@ export function ReportDialog({ onClose }: { onClose: () => void }) {
   const send = (t: string) => {
     if (!t.trim() || busy) return;
     ref.current?.close();
-    nav("/event");
+    nav("/app/event");
     void report(t.trim());
   };
   return (

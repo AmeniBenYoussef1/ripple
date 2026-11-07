@@ -64,7 +64,7 @@ export function HistoryPage() {
                     <time>{new Date(l.at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</time>
                     <span className="tl-text">{l.text}</span>
                     {l.disruption && state.history.some((h) => h.id === l.disruption) && (
-                      <button type="button" className="link-btn" onClick={() => { select(l.disruption!); nav("/event"); }}>Open</button>
+                      <button type="button" className="link-btn" onClick={() => { select(l.disruption!); nav("/app/event"); }}>Open</button>
                     )}
                   </div>
                 </li>

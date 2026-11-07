@@ -213,7 +213,7 @@ export function SetupPage() {
   };
   const looksRight = async () => {
     await confirmSetup();
-    nav("/event");
+    nav("/app/event");
   };
 
   return (

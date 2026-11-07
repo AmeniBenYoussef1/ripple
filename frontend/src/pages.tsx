@@ -71,7 +71,7 @@ export function HomePage() {
             <div><span className="big">{state.history.length}</span><span className="sub">problems today</span></div>
             <div><span className="big">{drafts}</span><span className="sub">drafts to review</span></div>
           </div>
-          <button type="button" className="btn btn-secondary" onClick={() => nav("/event")}>Open workspace<ChevronRight size={16} /></button>
+          <button type="button" className="btn btn-secondary" onClick={() => nav("/app/event")}>Open workspace<ChevronRight size={16} /></button>
         </section>
 
         <section className="card">
@@ -85,7 +85,7 @@ export function HomePage() {
                 const n = state.history.indexOf(h) + 1;
                 return (
                   <li key={h.id}>
-                    <button type="button" className="hist-row" onClick={() => { select(h.id); nav("/event"); }}>
+                    <button type="button" className="hist-row" onClick={() => { select(h.id); nav("/app/event"); }}>
                       <span className="hist-n">{n}</span>
                       <span className="hist-main">
                         <span className="hist-text">{h.text}</span>
@@ -215,7 +215,7 @@ export function SettingsPage() {
         <section className="card">
           <CardHead icon={<RotateCcw size={18} />} title="Start over" sub="Clears every problem, message and file of this event" />
           <button type="button" className="btn btn-danger" disabled={busy}
-            onClick={async () => { if (confirm("Start the event over? This clears all problems, messages and files.")) { await reset(); nav("/setup"); } }}>
+            onClick={async () => { if (confirm("Start the event over? This clears all problems, messages and files.")) { await reset(); nav("/app/setup"); } }}>
             <RotateCcw size={16} />Reset event
           </button>
         </section>
