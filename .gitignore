@@ -1,4 +1,7 @@
+# secrets: every .env file, except the example with names only
 .env
+.env.*
+!.env.example
 .venv/
 __pycache__/
 node_modules/
