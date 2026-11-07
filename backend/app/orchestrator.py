@@ -45,7 +45,9 @@ from .scoring import score
 
 BACKEND = Path(__file__).resolve().parents[1]
 FIXTURES = BACKEND / "fixtures"
-EVENTS = BACKEND / "events"
+# RIPPLE_DATA_DIR: where events (and visitors' usage) live, e.g. a persistent disk on the server
+DATA_ROOT = Path(os.environ["RIPPLE_DATA_DIR"]) if os.environ.get("RIPPLE_DATA_DIR") else BACKEND
+EVENTS = DATA_ROOT / "events"
 DATA = BACKEND / "demo_data"
 GENERATED_MODEL = DATA / "event_model_generated.json"
 LATE_REGISTRATIONS = DATA / "late_registrations.csv"   # the newcomers of a "resized" disruption

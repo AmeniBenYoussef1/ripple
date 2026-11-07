@@ -31,13 +31,32 @@ function kindOf(detail: string): [string, string] {
   return KINDS.includes(k) ? [k, detail.slice(i + 1)] : ["", detail];
 }
 
+/** This browser's visitor id, kept in local storage and sent with every request. The frontend and
+ *  backend may be on different sites, where browsers can drop cookies; a header always arrives. */
+function visitorId(): string {
+  let id = localStorage.getItem("ripple.visitor");
+  if (!id || !/^[a-f0-9]{32}$/.test(id)) {
+    id = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
+    localStorage.setItem("ripple.visitor", id);
+  }
+  return id;
+}
+
+function who(): Record<string, string> {
+  const mark = localStorage.getItem("ripple.owner");
+  return { "X-Ripple-Visitor": visitorId(), ...(mark ? { "X-Ripple-Owner-Mark": mark } : {}) };
+}
+
+/** Links and live updates can't carry a header: the visitor id goes in the address. */
+const withVisitor = (url: string) => `${url}${url.includes("?") ? "&" : "?"}visitor=${visitorId()}`;
+
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${API}${path}`, {
       ...init,
       credentials: "include",   // the visitor cookie (public Start flow)
-      headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+      headers: { "Content-Type": "application/json", ...who(), ...(init?.headers ?? {}) },
     });
   } catch {
     throw new ApiError(friendlyError(0, ""), `fetch ${path} failed: server unreachable at ${API}`);
@@ -126,7 +145,7 @@ export const api = {
     files.forEach((f) => form.append("files", f, f.name));
     let res: Response;
     try {
-      res = await fetch(`${API}${ev()}/analyze`, { method: "POST", body: form, credentials: "include" });
+      res = await fetch(`${API}${ev()}/analyze`, { method: "POST", body: form, credentials: "include", headers: who() });
     } catch {
       throw new ApiError(friendlyError(0, ""), `analyze: server unreachable at ${API}`);
     }
@@ -155,15 +174,19 @@ export const api = {
   createEvent: (id: string, title: string) =>
     call<EventState>(`/api/events/${encodeURIComponent(id)}/create`, { method: "POST", body: JSON.stringify({ title }) }),
   visitorStatus: () => call<VisitorStatus>("/api/visitor/status"),
-  ownerToken: (token: string) => call<{ owner: boolean }>("/api/visitor/owner", { method: "POST", body: JSON.stringify({ token }) }),
+  async ownerToken(token: string) {
+    const r = await call<{ owner: boolean; mark?: string }>("/api/visitor/owner", { method: "POST", body: JSON.stringify({ token }) });
+    if (r.owner && r.mark) localStorage.setItem("ripple.owner", r.mark);
+    return r;
+  },
   visitorEvent: (title: string) => call<EventState>("/api/visitor/event", { method: "POST", body: JSON.stringify({ title }) }),
   visitorSample: () => call<EventState>("/api/visitor/sample", { method: "POST" }),
   samplePackUrl: () => `${API}/api/sample-pack.zip`,
   confirmSetup: () => call<EventState>(`${ev()}/setup/confirm`, { method: "POST" }),
   demoFiles: () => call<{ name: string; bytes: number }[]>("/api/demo-files"),
   demoFileUrl: (name: string) => `${API}/api/demo-files/${encodeURIComponent(name)}`,
-  fileUrl: (name: string) => `${API}${ev()}/files/${encodeURIComponent(name)}`,
-  streamUrl: () => `${API}${ev()}/stream`,
+  fileUrl: (name: string) => withVisitor(`${API}${ev()}/files/${encodeURIComponent(name)}`),
+  streamUrl: () => withVisitor(`${API}${ev()}/stream`),
 };
 
 export interface VisitorStatus {

@@ -33,7 +33,7 @@ from .agents import AgentOutputError
 from .geo import Geocoder, venue_pins
 from .visitors import Limits, Visitors, is_visitor_event, new_visitor_event_id
 from .whatif import simulate
-from .orchestrator import (check_setup_files, list_events, reset_problems, set_budget, slugify, edit_message, replan_with, record_decision, relax_limits, set_action, answer_question, recorded_answers, recorded_options, DATA, EVENTS, FIXTURES, GENERATED_MODEL, SETUP_MAX_BYTES, Event, OrchestratorError,
+from .orchestrator import (check_setup_files, list_events, reset_problems, set_budget, slugify, edit_message, replan_with, record_decision, relax_limits, set_action, answer_question, recorded_answers, recorded_options, DATA, DATA_ROOT, EVENTS, FIXTURES, GENERATED_MODEL, SETUP_MAX_BYTES, Event, OrchestratorError,
                            Runner, analyze_event, approve_messages, choose_scenario, confirm_setup, demo_mode,
                            handle_disruption, load_event, new_event, total_cost)
 
@@ -42,7 +42,7 @@ load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 DEFAULT_AREA = os.environ.get("RIPPLE_SEARCH_AREA", "Paris, France")
 # Events that always replay their recordings in fixtures/, even on a Live server (the CodeSprint demo).
 REPLAY_EVENTS = {e.strip() for e in os.environ.get("RIPPLE_REPLAY_EVENTS", "demo").split(",") if e.strip()}
-RECORDINGS = Path(__file__).resolve().parents[1] / "recordings"   # Live recordings of every other event
+RECORDINGS = DATA_ROOT / "recordings"   # Live recordings of every other event (RIPPLE_DATA_DIR)
 SAMPLE_PACK = Path(__file__).resolve().parents[1] / "sample_pack"   # fictional files visitors can download
 PUBLIC = os.environ.get("RIPPLE_PUBLIC", "false").strip().lower() in ("1", "true", "yes")
 COOKIE = "ripple_visitor"
@@ -221,9 +221,13 @@ def create_app(events_dir: Path = EVENTS, fixtures_dir: Path = FIXTURES, model_p
     @app.middleware("http")
     async def visitor_identity(request: Request, call_next):
         """A cookie per browser; a visitor's events are theirs only; shared events are read-only in public."""
-        vid = request.cookies.get(COOKIE, "")
+        # who: the id the page keeps in local storage (header, or ?visitor= on links and live updates),
+        # else the cookie. The header still works where third-party cookies are blocked.
+        ok = lambda v: bool(re.fullmatch(r"[a-f0-9]{32}", v or ""))
+        vid = next((v for v in (request.headers.get("x-ripple-visitor"), request.query_params.get("visitor"),
+                                request.cookies.get(COOKIE)) if ok(v)), "")
         fresh = None
-        if not re.fullmatch(r"[a-f0-9]{32}", vid):
+        if not vid:
             vid = fresh = secrets.token_hex(16)
         request.state.visitor = vid
         request.state.ip = request.client.host if request.client else "unknown"
@@ -261,8 +265,8 @@ def create_app(events_dir: Path = EVENTS, fixtures_dir: Path = FIXTURES, model_p
         if not token:
             return False
         header = request.headers.get("x-ripple-owner", "")
-        cookie = request.cookies.get(OWNER_COOKIE, "")
-        return secrets.compare_digest(header, token) or secrets.compare_digest(cookie, owner_mark)
+        mark = request.headers.get("x-ripple-owner-mark", "") or request.cookies.get(OWNER_COOKIE, "")
+        return secrets.compare_digest(header, token) or secrets.compare_digest(mark, owner_mark)
 
     def live_gate(request: Request, event_id: str, kind: str) -> bool:
         """Before agents run for real: limits for visitors; nothing live on shared events in public.
@@ -383,7 +387,7 @@ def create_app(events_dir: Path = EVENTS, fixtures_dir: Path = FIXTURES, model_p
         """/start?owner=<token> calls this once; a wrong token looks like nothing happened."""
         if not token or not secrets.compare_digest(body.token, token):
             return JSONResponse({"owner": False})
-        response = JSONResponse({"owner": True})
+        response = JSONResponse({"owner": True, "mark": owner_mark})   # a hash of the token, kept by the page
         set_cookie(response, OWNER_COOKIE, owner_mark)
         return response
 

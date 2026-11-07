@@ -224,7 +224,8 @@ def test_owner_skips_visitor_limits_but_has_an_own_cap(tmp_path):
     with TestClient(app) as c:
         assert c.post("/api/visitor/owner", json={"token": "wrong"}).json() == {"owner": False}
         assert "ripple_owner" not in c.cookies
-        assert c.post("/api/visitor/owner", json={"token": "s3cret-owner"}).json() == {"owner": True}
+        mark = c.post("/api/visitor/owner", json={"token": "s3cret-owner"}).json()
+        assert mark["owner"] is True and mark["mark"] != "s3cret-owner"
         assert c.cookies["ripple_owner"] != "s3cret-owner"                    # a hash, never the token
         st = c.get("/api/visitor/status").json()
         assert st["owner"] is True and st["analyses_left"] is None and st["budget_left"] is True
@@ -248,3 +249,15 @@ def test_owner_header_works_and_is_off_without_a_token(tmp_path):
     with TestClient(app) as c:
         assert c.post("/api/visitor/owner", json={"token": ""}).json() == {"owner": False}
         assert c.get("/api/visitor/status").json()["owner"] is False
+
+
+def test_visitor_id_in_a_header_works_without_cookies(tmp_path):
+    """Frontend and backend on different sites: browsers may drop the cookie, the header still works."""
+    app, _, _ = make(tmp_path)
+    me = {"X-Ripple-Visitor": "ab" * 16}
+    with TestClient(app) as a, TestClient(app) as b:
+        eid = a.post("/api/visitor/event", headers=me).json()["event_id"]
+        a.cookies.clear()
+        assert a.get(f"/api/events/{eid}", headers=me).status_code == 200
+        assert b.get(f"/api/events/{eid}?visitor={'ab' * 16}").status_code == 200       # links and live updates
+        assert b.get(f"/api/events/{eid}").status_code == 404
