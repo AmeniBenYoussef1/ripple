@@ -151,7 +151,7 @@ export function RippleMap({ model, impact, resolved, animateKey }: Props) {
         aria-label={impact ? `Ripple map: ${hit} of ${total} items affected in ${waves} waves` : "Event map, nothing affected"}>
         <defs>
           <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-            <path d="M0 0L10 5L0 10z" fill="#B4502C" />
+            <path d="M0 0L10 5L0 10z" style={{ fill: "var(--edge-live)" }} />
           </marker>
         </defs>
 

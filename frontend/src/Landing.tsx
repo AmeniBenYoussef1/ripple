@@ -8,6 +8,7 @@ import { Link } from "react-router-dom";
 import { Logo } from "./components/Shell";
 import { HeroMap } from "./HeroMap";
 import "./landing.css";
+import { ThemeToggle } from "./theme";
 
 /** Set VITE_VIDEO_URL (e.g. in frontend/.env.local) to turn on "Watch the video". */
 const VIDEO_URL = (import.meta.env.VITE_VIDEO_URL as string | undefined)?.trim() ?? "";
@@ -50,6 +51,7 @@ export function Landing() {
           <a href="#faq">FAQ</a>
         </nav>
         <div className="l-nav-end">
+          <ThemeToggle />
           <Link to="/app" className="btn btn-primary">Try the demo</Link>
         </div>
       </header>

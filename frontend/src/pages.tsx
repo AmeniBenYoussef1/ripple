@@ -1,5 +1,5 @@
 // The four pages: Home, Event workspace, Outbox, Settings.
-import { CalendarDays, ChevronRight, Inbox, MapPin, Plus, RotateCcw, Server, Users } from "lucide-react";
+import { CalendarDays, ChevronRight, Inbox, MapPin, Plus, RotateCcw, Server, Sun, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { API, getEvent } from "./api";
 import { AgentsCard, LiveFeed, OutboxCard, PlanCard, RecoveryPlan } from "./components/cards";
@@ -9,6 +9,7 @@ import { VenueCard } from "./components/VenueMap";
 import { CardHead, Pill, Stepper, phaseOf, statusText } from "./components/ui";
 import { RippleMap } from "./RippleMap";
 import { useRipple } from "./store";
+import { useTheme } from "./theme";
 import type { EventModel } from "./types";
 import { entryToView, peopleAffected } from "./view";
 
@@ -45,8 +46,8 @@ export function HomePage() {
         <svg className="banner-wave" viewBox="0 0 600 200" preserveAspectRatio="none" aria-hidden="true">
           <defs>
             <linearGradient id="wave" x1="0" x2="1" y1="0" y2="0">
-              <stop offset="0" stopColor="#FF916B" stopOpacity="0.28" />
-              <stop offset="1" stopColor="#EEE2D1" stopOpacity="0.6" />
+              <stop offset="0" style={{ stopColor: "var(--coral)", stopOpacity: 0.28 }} />
+              <stop offset="1" style={{ stopColor: "var(--cream)", stopOpacity: 0.6 }} />
             </linearGradient>
           </defs>
           <path d="M0 120 C 120 70, 220 170, 340 120 S 520 60, 600 100 L600 200 L0 200 Z" fill="url(#wave)" />
@@ -195,6 +196,7 @@ export function OutboxPage() {
 
 export function SettingsPage() {
   const { state, reset, busy } = useRipple();
+  const [theme, choice, setChoice] = useTheme();
   const nav = useNavigate();
   if (!state) return null;
   return (
@@ -210,6 +212,15 @@ export function SettingsPage() {
             <dt>API</dt><dd>{API}</dd>
             <dt>Event id</dt><dd>{getEvent()}</dd>
           </dl>
+        </section>
+        <section className="card">
+          <CardHead icon={<Sun size={18} />} title="Appearance" sub={`Now showing the ${theme} theme. Saved in this browser.`} />
+          <div className="seg" role="radiogroup" aria-label="Theme">
+            {(["light", "dark", "system"] as const).map((c) => (
+              <button key={c} type="button" role="radio" aria-checked={choice === c} className={`seg-btn wide ${choice === c ? "on" : ""}`}
+                onClick={() => setChoice(c)}>{c === "system" ? "Match my system" : c === "light" ? "Light" : "Dark"}</button>
+            ))}
+          </div>
         </section>
         <div className="span-all"><BehindTheScenes view={undefined} open /></div>
         <section className="card">

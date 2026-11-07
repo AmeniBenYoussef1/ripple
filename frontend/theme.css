@@ -12,3 +12,41 @@
   --bg: #FAF6F0;
   --font: 'Plus Jakarta Sans', Inter, system-ui, sans-serif;
 }
+
+/* Meaning-based colours. Light values here, dark values below.
+   Every text/background pair is checked by scripts/contrast.mjs (WCAG AA). */
+:root {
+  --surface: #FFFFFF;          /* cards */
+  --text: var(--ink);
+  --strong-bg: var(--ink);     /* selected segment, avatar */
+  --on-strong: #FFFFFF;
+  --ok-text: var(--teal-dark); /* links, "done", "handled" */
+  --icon: var(--teal-dark);
+  --btn2-border: var(--teal-dark);
+  --ok-bg: #E3F4F0; --ok-fg: var(--teal-dark); --ok-soft: #F5FBF9;
+  --warn-text: var(--coral-dark); --warn-bg: #FFF1EB; --warn-fg: var(--coral-dark); --warn-soft: #FFF8F4;
+  --bad-text: var(--raspberry-dark); --bad-bg: #FDF0F3; --bad-fg: var(--raspberry-dark); --bad-soft: #FDF7F9; --bad-line: #F0C9D3;
+  --accent-text: var(--raspberry);
+  --dash: #C9BFB2; --node-stroke: #8A7E8E; --edge: #DCD2C5; --edge-live: var(--coral-dark);
+  --map-bg: var(--bg); --hero-bg: var(--cream);
+  color-scheme: light;
+}
+
+/* Dark: ink background, a lighter ink for cards, cream text; raspberry, coral and teal stay as
+   accents (as fills, or coral as text: raspberry and teal text are too dark on ink). */
+:root[data-theme="dark"] {
+  --bg: #2B2233;
+  --surface: #3A2F42;
+  --cream: #4B3F55;            /* chips, lines, tracks */
+  --muted: #C8BCC9;
+  --text: #EEE2D1;
+  --strong-bg: #EEE2D1; --on-strong: #2B2233;
+  --ok-text: #EEE2D1; --icon: #2CA18C; --btn2-border: #2CA18C;
+  --ok-bg: #1E7A69; --ok-fg: #FFFFFF; --ok-soft: #33393F;
+  --warn-text: #FF916B; --warn-bg: #FF916B; --warn-fg: #2B2233; --warn-soft: #4A3743;
+  --bad-text: #FF916B; --bad-bg: #C14364; --bad-fg: #FFFFFF; --bad-soft: #4A3141; --bad-line: #7A3A52;
+  --accent-text: #FF916B;
+  --dash: #6E6176; --node-stroke: #9F92A4; --edge: #554860; --edge-live: #FF916B;
+  --map-bg: #33293B; --hero-bg: #3A2F42;
+  color-scheme: dark;
+}

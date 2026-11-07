@@ -2,6 +2,7 @@
 import { FileUp, FlaskConical, History, Home, Inbox, LayoutDashboard, Settings, X, Zap } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
+import { ThemeToggle } from "../theme";
 import { useRipple } from "../store";
 import { money } from "../view";
 
@@ -51,7 +52,7 @@ export function Sidebar() {
   ];
   return (
     <div className="side-col"><nav className="sidebar" aria-label="Main">
-      <div className="side-brand"><Logo /><span>Ripple</span></div>
+      <div className="side-brand"><Logo /><span>Ripple</span><span className="side-theme"><ThemeToggle /></span></div>
       <EventSwitcher />
       <ul className="side-links">
         {links.map((l) => (

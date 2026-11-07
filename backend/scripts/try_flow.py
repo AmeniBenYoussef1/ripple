@@ -20,7 +20,7 @@ sys.stdout.reconfigure(encoding="utf-8")  # accents in venue names on the Window
 from cominty_sdk import AsyncCominty, ComintyError  # noqa: E402
 
 from app.agents import AgentOutputError  # noqa: E402
-from app.orchestrator import (OrchestratorError, Runner, choose_scenario, demo_mode,  # noqa: E402
+from app.orchestrator import (EVENTS, OrchestratorError, Runner, choose_scenario, demo_mode,  # noqa: E402
                               handle_disruption, new_event)
 
 TEXTS = ["The hall just cancelled.", "Speaker 2's train is 2 hours late.", "30 late registrations."]
@@ -77,7 +77,7 @@ def show_outbox(res: dict) -> None:
 
 
 async def flow(runner: Runner) -> None:
-    event = new_event("demo-flow")
+    event = new_event("demo-flow", events_dir=EVENTS / "_scripts")   # a scratch event, not listed in the app
     for i, text in enumerate(TEXTS, 1):
         print(f"\n=== {i}. {text}")
         out = await handle_disruption(event, text, runner, area=AREA)
